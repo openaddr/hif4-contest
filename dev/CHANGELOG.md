@@ -30,3 +30,6 @@
 - artifact: dist/solution_v8.zip
 - note: v8: linear transform now 3-way guarded {rotation | channel permutation | none} via GPTQ-level subsample proxy (permutation = correlation-preserving outlier isolation, wins on flat/hard regimes where rotation suboptimal); activation GPTQ act-ordered. mini lin +81-85%, attn +41-55% (attn unchanged); synth lin mean 41.4%/worst 27.1 (worst improved from 34.8). Decomp probe: online lin +67.5%, attn +11.9% -> v8 targets linear. Judge est ~245s/300s
 
+## v9 - 2026-08-20 00:09:36
+- artifact: dist/solution_v9.zip
+

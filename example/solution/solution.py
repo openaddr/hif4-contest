@@ -1,17 +1,16 @@
-"""HiF4 solution v2: NVFP4 -> HiF4 for Linear and Attention.
+"""HiF4 solution v9: NVFP4 -> HiF4 for Linear and Attention.
 
 Pipeline per tensor:
   1. Dequantize NVFP4 -> BF16 -> FP32.
-  2. Optional per-channel smoothing s (Linear: act<->weight; Attention: q<->k),
-     searched on calibration data. Mathematically x.w and q.k are invariant.
-  3. Hierarchical HiF4 quantization:
-       - scale_factor searched over 8 exact E6M2 candidates per 64-block,
-         minimizing output-error-weighted block MSE;
-       - lv2 / lv3 then refined by weighted MSE (not greedy);
-       - mantissa rounded to the 0.25 grid, clamped to [0, 1.75].
-  4. Weights reflect output sensitivity: weight channel j ~ E[act_j^2],
-     activation channel j ~ sum_out W[:,j]^2, Q/K cross energies, V positional
-     importance from the calibration attention-prob Gram diagonal.
+  2. Optional per-channel smoothing s (Linear: act<->weight), searched on
+     calibration data. Mathematically x.w is invariant.
+  3. Hierarchical HiF4 quantization: per 64-block, 6 E6M2 sf candidates
+     around the absmax/7 anchor, each ranked by its EXACT refined error
+     (jointly optimal lv2/lv3 tree under weighted MSE); greedy-threshold
+     ranking overshoots sf and forfeits ~5pp of MSE on Gaussian blocks.
+  4. Exact-invariance transforms chosen per group on calibration data
+     (block-diagonal Hadamard rotation for Linear, per-head rotation for
+     Q/K), then hold-out-guarded GPTQ on weights and activations.
 
 Rows are processed in chunks to bound peak memory.
 """
@@ -24,7 +23,10 @@ import torch
 SF_MIN = 2.0 ** -48
 SF_MAX = 49152.0
 E6M2_SIG = (1.0, 1.25, 1.5, 1.75)
-ANCHOR_EXP_OFFS = (0, 1)
+# (exp offset, significand) pairs around the absmax/7 anchor. Candidates are
+# ranked by EXACT refined error (jointly optimal lv tree per candidate):
+# greedy-lv ranking systematically overshoots sf and loses ~5pp of MSE.
+CAND_GRID = ((0, 1.0), (0, 1.25), (0, 1.5), (0, 1.75), (1, 1.0), (1, 1.25))
 ROW_CHUNK = 2048
 # ablation switches (keep True / non-empty for submission)
 USE_WEIGHTS = True
@@ -46,79 +48,61 @@ def dequantize_nvfp4(quant_float, scale_float, blk_size=16):
 
 
 def _quant_chunk(xb: torch.Tensor, wblk: torch.Tensor) -> dict[str, torch.Tensor]:
-    """Quantize one row-chunk. xb: (r, nb, 8, 2, 4); wblk broadcastable (nb,8,2,4)."""
+    """Quantize one row-chunk. xb: (r, nb, 8, 2, 4); wblk broadcastable (nb,8,2,4).
+
+    Candidates are ranked by their EXACT refined error: for each sf candidate
+    the lv tree is chosen optimally (per-group lv3 argmin given lv2, per
+    sub-block lv2 argmin over its groups' summed errors) and that minimal
+    error ranks the candidate. Greedy-threshold ranking overshoots sf.
+    """
     ab = xb.abs()
     amax = ab.amax(dim=(2, 3, 4), keepdim=True)
-    amax8 = ab.amax(dim=(3, 4), keepdim=True)
-    amax4 = ab.amax(dim=4, keepdim=True)
-
-    # ---- stage 1: scale_factor over E6M2 candidates anchored at absmax/7 ----
-    # grid covers [absmax/14, absmax/2]: the top value lands near mant 1.75
-    # with lv2=lv3=2, and small sub-blocks keep fine resolution at lv=1.
     t = (amax / 7.0).clamp_min(1e-38)
     e0 = torch.floor(torch.log2(t)).squeeze(-1).squeeze(-1).squeeze(-1)  # (r, nb)
+
     err_best = None
     sf_best = None
-    for e_off in ANCHOR_EXP_OFFS:
-        pe = torch.exp2(e0 + e_off)                                   # (r, nb)
-        for c in E6M2_SIG:
-            sf = (pe * c).clamp(SF_MIN, SF_MAX)
-            sf5 = sf[..., None, None, None]
-            lv2 = torch.where(amax8 / sf5 > 1.75, 2.0, 1.0)
-            lv3 = torch.where(amax4 / (sf5 * lv2) > 1.75, 2.0, 1.0)
-            unit = sf5 * lv2 * lv3
-            mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
-            err = ((mant * unit - ab) ** 2 * wblk).sum(dim=(2, 3, 4))
-            if err_best is None:
-                err_best, sf_best = err, sf
+    lv2_best = None
+    lv3_best = None
+    for k_off, sig in CAND_GRID:
+        sf = (torch.exp2(e0 + k_off) * sig).clamp(SF_MIN, SF_MAX)
+        sf5 = sf[..., None, None, None]
+        best_e2 = None
+        best_l2 = None
+        best_l3 = None
+        for lv2_c in (1.0, 2.0):
+            e3_list = []
+            for lv3_c in (1.0, 2.0):
+                unit = sf5 * lv2_c * lv3_c
+                mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
+                e3_list.append(((mant * unit - ab) ** 2 * wblk).sum(dim=4))  # (r,nb,8,2)
+            take1 = e3_list[0] <= e3_list[1]
+            e3 = torch.where(take1, e3_list[0], e3_list[1])
+            lv3 = torch.where(take1, 1.0, 2.0)                              # (r,nb,8,2)
+            e2 = e3.sum(dim=3)                                              # (r,nb,8)
+            if best_e2 is None:
+                best_e2, best_l2, best_l3 = e2, lv2_c, lv3
             else:
-                better = err < err_best
-                err_best = torch.where(better, err, err_best)
-                sf_best = torch.where(better, sf, sf_best)
-    sf = sf_best[..., None, None, None]
-
-    # ---- stage 2: lv2 per sub-block, lv3 per group, by weighted MSE ----
-    if not LV_REFINE:
-        lv2 = torch.where(amax8 / sf > 1.75, 2.0, 1.0)
-        lv3 = torch.where(amax4 / (sf * lv2) > 1.75, 2.0, 1.0)
-        unit = sf * lv2 * lv3
-        mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
-        return {
-            "scale_factor": sf,
-            "scale_lv2": lv2,
-            "scale_lv3": lv3,
-            "sign": torch.sign(xb),
-            "mant": mant,
-        }
-    wsub = wblk  # (nb,8,2,4) -> sums below aggregate to sub-block granularity
-    best_e2 = None
-    best_lv2 = None
-    best_lv3 = None
-    for lv2_cand in (1.0, 2.0):
-        base = sf * lv2_cand
-        e3_list = []
-        m3_list = []
-        for lv3_cand in (1.0, 2.0):
-            unit = base * lv3_cand
-            mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
-            e3_list.append(((mant * unit - ab) ** 2 * wsub).sum(dim=4))  # (r,nb,8,2)
-            m3_list.append(lv3_cand)
-        take1 = e3_list[0] <= e3_list[1]
-        e3 = torch.where(take1, e3_list[0], e3_list[1])
-        lv3 = torch.where(take1, 1.0, 2.0)                              # (r,nb,8,2)
-        e2 = e3.sum(dim=3)                                              # (r,nb,8)
-        if best_e2 is None:
-            best_e2, best_lv2, best_lv3 = e2, lv2_cand, lv3
+                take2 = e2 < best_e2
+                best_e2 = torch.where(take2, e2, best_e2)
+                best_l2 = torch.where(take2, lv2_c, best_l2)
+                best_l3 = torch.where(take2.unsqueeze(-1), lv3, best_l3)
+        err = best_e2.sum(dim=2)                                            # (r,nb)
+        if err_best is None:
+            err_best, sf_best = err, sf
+            lv2_best, lv3_best = best_l2, best_l3
         else:
-            take2 = e2 < best_e2
-            best_e2 = torch.where(take2, e2, best_e2)
-            best_lv2 = torch.where(take2, lv2_cand, best_lv2)
-            best_lv3 = torch.where(take2.unsqueeze(-1), lv3, best_lv3)
+            take = err < err_best
+            take2 = take.unsqueeze(-1)
+            take3 = take2.unsqueeze(-1)
+            err_best = torch.where(take, err, err_best)
+            sf_best = torch.where(take, sf, sf_best)
+            lv2_best = torch.where(take2, best_l2, lv2_best)
+            lv3_best = torch.where(take3, best_l3, lv3_best)
 
-    lv2 = best_lv2.reshape(*best_lv2.shape, 1, 1)
-    lv3 = best_lv3.reshape(*best_lv3.shape, 1)
-
-    # ---- final params with chosen (sf, lv2, lv3) ----
+    sf = sf_best[..., None, None, None]
+    lv2 = lv2_best[..., None, None]
+    lv3 = lv3_best[..., None]
     unit = sf * lv2 * lv3
     mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
     return {
@@ -311,13 +295,12 @@ def hif4_calibration_and_quantize_weight(
     weight_scale: torch.Tensor,
     calib_activation_list: list,
 ) -> dict[str, Any]:
-    """Weight path: alpha smoothing -> transform choice {rotation | channel
-    permutation | none} via GPTQ-level subsample proxy -> anchored search ->
-    hold-out-guarded GPTQ -> activation-side GPTQ (act-ordered).
+    """Weight path: alpha smoothing -> rotation on/off via GPTQ-level
+    subsample proxy -> anchored refined search -> hold-out-guarded GPTQ ->
+    activation-side GPTQ (act-ordered).
 
-    Both transforms are exact matmul invariants: rotation Gaussianizes
-    intra-block outliers; permutation clusters same-magnitude channels into
-    blocks while preserving the cross-channel correlations GPTQ exploits.
+    The rotation is an exact matmul invariant that Gaussianizes intra-block
+    outliers; it is kept only when the GPTQ-level proxy prefers it.
     """
     w = dequantize_nvfp4(weight_quant, weight_scale).float()
     R, C = w.shape
@@ -353,28 +336,22 @@ def hif4_calibration_and_quantize_weight(
     w_s = w / s
     acts_s = [a * s for a in acts_raw]
 
-    # ---- transform choice: {0: none, 1: rotation, 2: permutation} ----
+    # ---- transform choice: {0: none, 1: rotation} ----
     mode = 0
-    perm = None
     Uw = None
     xh_pick = None
     if R > 64 and len(acts_s) >= 2 and acts_s[-1].shape[0] >= 8:
         rsub = torch.randperm(R)[: min(R, 256)]
         xh_last = acts_s[-1]
         sub = torch.randperm(xh_last.shape[0])[: min(xh_last.shape[0], 128)]
-        energy = sq_sum / max(n_tok, 1)
-        difficulty = (energy * (w * w).sum(dim=0)).sqrt()
-        perm = torch.argsort(difficulty, descending=True)
 
         def tf(t, md):
             if md == 1:
                 return _rot_blocks(t)
-            if md == 2:
-                return t[:, perm]
             return t
 
         spaces = []
-        for md in (0, 1, 2):
+        for md in (0, 1):
             Hs = torch.zeros(C, C, dtype=torch.float32)
             for a in acts_s[:-1]:
                 at = tf(a, md)
@@ -394,16 +371,12 @@ def hif4_calibration_and_quantize_weight(
         mode = int(torch.tensor(cand).argmin().item())
         if mode == 1 and spaces[1] is None:
             mode = 0
-        if mode == 2 and spaces[2] is None:
-            mode = 0
         Uw = spaces[mode]
         xh_pick = tf(xh_sub, mode).contiguous()
 
     def tf_final(t):
         if mode == 1:
             return _rot_blocks(t)
-        if mode == 2:
-            return t[:, perm]
         return t
 
     w_final = tf_final(w_s)
@@ -463,7 +436,6 @@ def hif4_calibration_and_quantize_weight(
     activation_state = {
         "s": s.contiguous(),
         "mode": mode,
-        "perm": (perm.contiguous() if mode == 2 else None),
         "u_act": u_act,
         "g": gptq_act,
         "order": (order.contiguous() if (gptq_act == 1 and order is not None) else None),
@@ -484,22 +456,16 @@ def hif4_dynamic_quantize_activation(
     R, C = x.shape
     s = None
     mode = 0
-    perm = None
     if isinstance(activation_state, dict):
         t = activation_state.get("s")
         if isinstance(t, torch.Tensor) and t.numel() == C:
             s = t.float()
         mode = activation_state.get("mode") or 0
-        t = activation_state.get("perm")
-        if isinstance(t, torch.Tensor) and t.numel() == C:
-            perm = t.long()
     if s is None:
         s = torch.ones(C, dtype=torch.float32)
     x = x * s
     if mode == 1:
         x = _rot_blocks(x)
-    elif mode == 2 and perm is not None:
-        x = x[:, perm].contiguous()
     p = _quantize_weighted(x, torch.ones(1, C, dtype=torch.float32))
     if isinstance(activation_state, dict) and activation_state.get("g") == 1:
         u = activation_state.get("u_act")
