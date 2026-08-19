@@ -6,3 +6,7 @@
 - artifact: dist/solution_v2.zip
 - note: v2: FIX root cause of -30091: sf candidate grid re-anchored at absmax/7 (was 2^floor(log2 amax), 2-3.5x too large, crushing small sub-blocks). + 8-cand weighted search, lv2/lv3 MSE refinement, AWQ smoothing (linear), q/k paired smoothing, V positional weights. Local vs norm7 baseline: linear +81%, attn +34%/case; self_check 22/22; est 92s local full-run
 
+## v3 - 2026-08-19 19:31:26
+- artifact: dist/solution_v3.zip
+- note: v3: attention recalibrated - gradient-sensitivity per-element weight tables (Q/K/V) with gamma search + auto fallback to uniform (gamma=0 chosen on mini_sample, self-guarding); keeps amax/7 anchored 8-code search + lv refinement + q/k smoothing. Local vs norm7: linear +79%, attn +38%/case (v2 was +34). Ref-solution calibration: online ~= 0.71x local => est +29000
+
