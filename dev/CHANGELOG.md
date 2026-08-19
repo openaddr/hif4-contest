@@ -33,3 +33,4 @@
 ## v9 - 2026-08-20 00:09:36
 - artifact: dist/solution_v9.zip
 
+- note: v9: sf candidates now ranked by EXACT refined error (6-cand R6 grid x jointly-optimal lv tree) instead of greedy-lv ranking — pure-Gaussian element-wise gain over alg1 6.6%->11.9% (near the 12.1% grid optimum); greedy ranking provably overshoots sf. Dropped v8's permutation proxy (online ~0 gain, refunds ~12s). mini +6.54->+6.65; synth lin mean 41.7->45.0/worst 27.1->37.9, attn mean 9.2->14.5/worst -20.8->-4.9. Timing A/B: +6.5s online est -> ~255s/300s. v8 online was 19883 @265.9s
