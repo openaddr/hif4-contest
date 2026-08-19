@@ -13,6 +13,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 import hif4  # noqa: E402
+import variants as V  # noqa: E402
 
 
 def load_solution(solution_dir):
@@ -46,7 +47,8 @@ def main():
         for ti, pair in enumerate(g["test_activation_list"]):
             x_ref = hif4.dequantize_nvfp4(*pair)
             ref = hif4.linear_ref(x_ref, w_ref)
-            mse_std = ((hif4.linear_ref(x_ref, w_std) - ref) ** 2).mean().item()
+            x_std = V.deq(V.quant_norm7(x_ref.float()))
+            mse_std = ((hif4.linear_ref(x_std, w_std) - ref) ** 2).mean().item()
 
             t_dyn = time.time()
             p = sol.hif4_dynamic_quantize_activation(pair[0], pair[1], cal["activation_state"])

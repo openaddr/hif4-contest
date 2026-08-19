@@ -26,6 +26,12 @@ SF_MAX = 49152.0
 E6M2_SIG = (1.0, 1.25, 1.5, 1.75)
 ANCHOR_EXP_OFFS = (0, 1)
 ROW_CHUNK = 2048
+# ablation switches (keep True / non-empty for submission)
+USE_WEIGHTS = True
+LV_REFINE = True
+ALPHA_GRID = (0.0, 0.25, 0.5)
+BETA_GRID = (0.0, 0.25)
+GAMMA_GRID = (0.0, 0.15, 0.3, 0.5)
 
 
 def dequantize_nvfp4(quant_float, scale_float, blk_size=16):
@@ -72,6 +78,18 @@ def _quant_chunk(xb: torch.Tensor, wblk: torch.Tensor) -> dict[str, torch.Tensor
     sf = sf_best[..., None, None, None]
 
     # ---- stage 2: lv2 per sub-block, lv3 per group, by weighted MSE ----
+    if not LV_REFINE:
+        lv2 = torch.where(amax8 / sf > 1.75, 2.0, 1.0)
+        lv3 = torch.where(amax4 / (sf * lv2) > 1.75, 2.0, 1.0)
+        unit = sf * lv2 * lv3
+        mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
+        return {
+            "scale_factor": sf,
+            "scale_lv2": lv2,
+            "scale_lv3": lv3,
+            "sign": torch.sign(xb),
+            "mant": mant,
+        }
     wsub = wblk  # (nb,8,2,4) -> sums below aggregate to sub-block granularity
     best_e2 = None
     best_lv2 = None
@@ -118,6 +136,11 @@ def _quantize_weighted(x2d: torch.Tensor, wgt: torch.Tensor) -> dict[str, torch.
     nb = C // 64
     out: dict[str, list[torch.Tensor]] = {k: [] for k in
                                           ("scale_factor", "scale_lv2", "scale_lv3", "sign", "mant")}
+    if not USE_WEIGHTS:
+        wgt = torch.ones(1, C, dtype=torch.float32)
+    else:
+        wgt = wgt / wgt.mean().clamp_min(1e-30)
+        wgt = wgt.clamp(0.25, 4.0)
     w2d = wgt if wgt.shape == (R, C) else wgt.expand(R, C)
     for s0 in range(0, R, ROW_CHUNK):
         x_chunk = x2d[s0:s0 + ROW_CHUNK]
@@ -221,7 +244,7 @@ def hif4_calibration_and_quantize_weight(
         if a_big is None or a.shape[0] > a_big.shape[0]:
             a_big = a
 
-    for alpha in (0.0, 0.25, 0.5):
+    for alpha in ALPHA_GRID:
         s = torch.exp(logm * alpha)
         wp = _quant_weight_fast(w[rows] / s, act_energy * s * s)
         wq = (wp["sign"] * wp["mant"] * wp["scale_lv3"] * wp["scale_lv2"]
@@ -276,148 +299,81 @@ def _deq_params(p):
             * p["scale_factor"]).flatten(-4, -1)
 
 
+_R_CACHE: dict[int, torch.Tensor | None] = {}
+
+
+def _make_R(dh: int):
+    """Deterministic per-head orthogonal map H*D (Hadamard x random sign).
+
+    Returns None when head_dim is not a power of two (rotation disabled).
+    (q R)(k R)^T = q k^T, so attention is mathematically invariant; the
+    rotation only reshapes the value distribution before quantization.
+    """
+    if dh in _R_CACHE:
+        return _R_CACHE[dh]
+    if dh & (dh - 1):
+        _R_CACHE[dh] = None
+        return None
+    H = torch.tensor([[1.0]])
+    while H.shape[0] < dh:
+        H = torch.cat([torch.cat([H, H], 1), torch.cat([H, -H], 1)], 0)
+    H = H / (dh ** 0.5)
+    g = torch.Generator().manual_seed(0xA5A5 + dh)
+    d = (torch.rand(dh, generator=g) < 0.5).float() * 2 - 1
+    _R_CACHE[dh] = H * d.unsqueeze(0)
+    return _R_CACHE[dh]
+
+
 def hif4_calibration_attention(
     calib_qkv_list: list,
     q_num_heads: int,
     kv_num_heads: int,
     head_dim: int,
 ) -> dict[str, Any]:
-    """Attention calibration.
+    """Attention calibration: decide per-group whether to rotate Q/K.
 
-    1. q/k paired smoothing scales (dot product invariant), beta searched on a
-       subsample of the largest calib sample.
-    2. Per-element sensitivity weights for Q/K/V from dMSE/dX at the quantized
-       operating point (autograd through attention), accumulated into a
-       (max_seq, C) table over the 2 largest calib samples, gamma-damped and
-       searched on the subsample. Weights are pre-adapted to the smoothed
-       quantization space (q' = q*s_q etc.).
+    The rotation is an exact invariant of the attention output; the choice
+    on/off is measured directly on a subsample of the largest calib sample
+    (attention MSE with vs without rotation). V is never rotated (its output
+    is consumed directly by the judge).
     """
     qh, kvh, dh = q_num_heads, kv_num_heads, head_dim
-    rep = qh // kvh
-    qcc = qh * dh
-    kcc = kvh * dh
-
-    q_abs = torch.zeros(qcc, dtype=torch.float32)
-    k_abs = torch.zeros(kcc, dtype=torch.float32)
-    n = 0
-    for sample in calib_qkv_list:
-        q = dequantize_nvfp4(*sample["q"]).float()
-        k = dequantize_nvfp4(*sample["k"]).float()
-        q_abs += q.abs().sum(dim=0)
-        k_abs += k.abs().sum(dim=0)
-        n += q.shape[0]
-    q_absmean = q_abs / max(n, 1)
-    k_absmean = k_abs / max(n, 1)
-
-    q_abs_kv = q_absmean.view(qh, dh).view(kvh, rep, dh).mean(dim=1)
-    k_abs_kv = k_absmean.view(kvh, dh)
-    log_ratio = (q_abs_kv.clamp_min(1e-12) / k_abs_kv.clamp_min(1e-12)).log()
-    log_ratio = log_ratio - log_ratio.mean()
-
-    def make_s(beta):
-        sk = torch.exp(log_ratio * beta)
-        s_q = (1.0 / sk).repeat_interleave(rep, dim=0).flatten()
-        s_k = sk.flatten()
-        return s_q, s_k
+    R = _make_R(dh)
 
     big = max(calib_qkv_list, key=lambda smp: smp["q"][0].shape[0])
-    qb0 = dequantize_nvfp4(*big["q"]).float()
-    kb0 = dequantize_nvfp4(*big["k"]).float()
-    vb0 = dequantize_nvfp4(*big["v"]).float()
-    stride = max(1, (qb0.shape[0] + 255) // 256)
-    qb = qb0[::stride].contiguous()
-    kb = kb0[::stride].contiguous()
-    vb = vb0[::stride].contiguous()
-    T = qb.shape[0]
-    ones_q = torch.ones(1, qcc, dtype=torch.float32)
-    ones_k = torch.ones(1, kcc, dtype=torch.float32)
+    q = dequantize_nvfp4(*big["q"]).float()
+    k = dequantize_nvfp4(*big["k"]).float()
+    v = dequantize_nvfp4(*big["v"]).float()
+    stride = max(1, (q.shape[0] + 511) // 512)
+    q = q[::stride].contiguous()
+    k = k[::stride].contiguous()
+    v = v[::stride].contiguous()
+    T = q.shape[0]
 
-    ref = _attention_out(qb, kb, vb, qh, kvh, dh)
+    ref = _attention_out(q, k, v, qh, kvh, dh)
+    ones_q = torch.ones(1, qh * dh, dtype=torch.float32)
+    ones_k = torch.ones(1, kvh * dh, dtype=torch.float32)
 
-    best_beta, best_loss = 0.0, None
-    for beta in (0.0, 0.25):
-        s_q, s_k = make_s(beta)
-        pq = _quantize_weighted(qb * s_q, ones_q)
-        pk = _quantize_weighted(kb * s_k, ones_k)
-        pv = _quantize_weighted(vb, ones_k)
+    def run(qt, kt):
+        pq = _quantize_weighted(qt, ones_q)
+        pk = _quantize_weighted(kt, ones_k)
+        pv = _quantize_weighted(v, ones_k)
         out = _attention_out(_deq_params(pq), _deq_params(pk), _deq_params(pv), qh, kvh, dh)
-        # note: deq already in smoothed space; attention on smoothed q/k is
-        # invariant only for q<->k paired scaling, and v is unscaled.
-        loss = ((out - ref) ** 2).mean().item()
-        if best_loss is None or loss < best_loss:
-            best_loss, best_beta = loss, beta
+        return ((out - ref) ** 2).mean().item()
 
-    # scaled-space dequant for beta scoring uses division back; recompute properly:
-    # q'->q via /s_q only matters if beta>0 and v unpaired. The attention of
-    # (q*s_q, k*s_k) equals attention of (q, k) mathematically, so comparing in
-    # smoothed space against an unscaled reference is valid.
-    s_q, s_k = make_s(best_beta)
-
-    # ---- gradient sensitivity tables ----
-    maxT = 0
-    for smp in calib_qkv_list:
-        maxT = max(maxT, int(smp["q"][0].shape[0]))
-    maxT = min(maxT, 1024)
-    q_acc = torch.zeros(maxT, qcc, dtype=torch.float32)
-    k_acc = torch.zeros(maxT, kcc, dtype=torch.float32)
-    v_acc = torch.zeros(maxT, kcc, dtype=torch.float32)
-    rowcnt = torch.zeros(maxT, dtype=torch.float32)
-    for smp in sorted(calib_qkv_list, key=lambda s: -int(s["q"][0].shape[0]))[:2]:
-        q = dequantize_nvfp4(*smp["q"]).float()
-        k = dequantize_nvfp4(*smp["k"]).float()
-        v = dequantize_nvfp4(*smp["v"]).float()
-        st = max(1, (q.shape[0] + 383) // 384)
-        q = q[::st].contiguous()
-        k = k[::st].contiguous()
-        v = v[::st].contiguous()
-        Tt = q.shape[0]
-        ref_o = _attention_out(q, k, v, qh, kvh, dh)
-        q_var = q.clone().requires_grad_(True)
-        k_var = k.clone().requires_grad_(True)
-        v_var = v.clone().requires_grad_(True)
-        o = _attention_out(q_var, k_var, v_var, qh, kvh, dh)
-        ((o - ref_o) ** 2).mean().backward()
-        q_acc[:Tt] += q_var.grad ** 2
-        k_acc[:Tt] += k_var.grad ** 2
-        v_acc[:Tt] += v_var.grad ** 2
-        rowcnt[:Tt] += 1.0
-    cnt = rowcnt.clamp_min(1.0).unsqueeze(1)
-
-    def damp_tables(gamma):
-        def damp(acc):
-            w = (acc / cnt).clamp_min(1e-30) ** gamma
-            return w / w.mean()
-        wq = damp(q_acc) / (s_q * s_q).unsqueeze(0)
-        wk = damp(k_acc) * (s_k * s_k).unsqueeze(0)
-        wv = damp(v_acc)
-        return wq, wk, wv
-
-    best_gamma, best_loss = 0.0, None
-    for gamma in (0.0, 0.15, 0.3, 0.5):
-        if gamma <= 0.0:
-            wq_t = wk_t = wv_t = None
-        else:
-            wq_t, wk_t, wv_t = damp_tables(gamma)
-            wq_t = wq_t[:T].contiguous()
-            wk_t = wk_t[:T].contiguous()
-            wv_t = wv_t[:T].contiguous()
-        pq = _quantize_weighted(qb * s_q, wq_t if wq_t is not None else ones_q)
-        pk = _quantize_weighted(kb * s_k, wk_t if wk_t is not None else ones_k)
-        pv = _quantize_weighted(vb, wv_t if wv_t is not None else ones_k)
-        out = _attention_out(_deq_params(pq), _deq_params(pk), _deq_params(pv), qh, kvh, dh)
-        loss = ((out - ref) ** 2).mean().item()
-        if best_loss is None or loss < best_loss:
-            best_loss, best_gamma = loss, gamma
-
-    if best_gamma <= 0.0:
-        wq_t = wk_t = wv_t = None
+    loss_off = run(q, k)
+    if R is None:
+        rot = 0
     else:
-        wq_t, wk_t, wv_t = damp_tables(best_gamma)
+        qr = (q.view(T, qh, dh) @ R).reshape(T, qh * dh)
+        kr = (k.view(T, kvh, dh) @ R).reshape(T, kvh * dh)
+        loss_on = run(qr, kr)
+        rot = 1 if loss_on < loss_off else 0
 
     return {
-        "q_state": {"s": s_q.contiguous(), "w": (wq_t.contiguous() if wq_t is not None else None)},
-        "k_state": {"s": s_k.contiguous(), "w": (wk_t.contiguous() if wk_t is not None else None)},
-        "v_state": {"w": (wv_t.contiguous() if wv_t is not None else None)},
+        "q_state": {"rot": rot},
+        "k_state": {"rot": rot},
+        "v_state": None,
     }
 
 
@@ -462,9 +418,19 @@ def _dyn_table(x: torch.Tensor, state: dict | None, has_scale: bool) -> dict[str
     return _quantize_weighted(xs, wgt)
 
 
-def _dyn_qk(quant, scale, state):
+def _dyn_qk(quant, scale, state, num_heads, head_dim):
     x = dequantize_nvfp4(quant, scale).float()
-    return _dyn_table(x, state, has_scale=True)
+    if isinstance(state, dict) and state.get("rot") == 1:
+        R = _make_R(head_dim)
+        if R is not None:
+            T = x.shape[0]
+            x = (x.view(T, num_heads, head_dim) @ R).reshape(T, -1).contiguous()
+    return _dyn_table(x, None, has_scale=False)
+
+
+def _dyn_qk_norot(quant, scale, state):
+    x = dequantize_nvfp4(quant, scale).float()
+    return _dyn_table(x, None, has_scale=False)
 
 
 def _dyn_v(quant, scale, state):
@@ -473,11 +439,11 @@ def _dyn_v(quant, scale, state):
 
 
 def hif4_dynamic_quantize_q(q_quant, q_scale, q_num_heads, head_dim, q_state):
-    return _dyn_qk(q_quant, q_scale, q_state)
+    return _dyn_qk(q_quant, q_scale, q_state, q_num_heads, head_dim)
 
 
 def hif4_dynamic_quantize_k(k_quant, k_scale, kv_num_heads, head_dim, k_state):
-    return _dyn_qk(k_quant, k_scale, k_state)
+    return _dyn_qk(k_quant, k_scale, k_state, kv_num_heads, head_dim)
 
 
 def hif4_dynamic_quantize_v(v_quant, v_scale, kv_num_heads, head_dim, v_state):
