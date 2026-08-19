@@ -22,3 +22,7 @@
 - artifact: dist/solution_v6.zip
 - note: v6: + block-diagonal 64-dim random-Hadamard rotation for linear (exact matmul invariant, Gaussianizes intra-block outliers; on/off chosen per group by GPTQ-level proxy on weight subsample — RTN-level proxy proved too noisy). Rotation+GPTQ synergistic on mini (weight-side 0.22x alg1) and synth. Fixed diag3 eval bug (player activations were unquantized). mini: lin +81-85%/case, attn +29-42%; synth: lin +42%/worst +35, attn +9%. Judge time est 165-218s/300s
 
+## v7 - 2026-08-19 22:41:08
+- artifact: dist/solution_v7.zip
+- note: v7: + Q/K logit-space GPTQ (per-head 256x256 Hessians Q^TQ/K^TK from calib, hold-out guarded; targets softmax(Q dK^T + dQ K^T) linearization). mini attn +41%->+55%/case (t4 3.42e-4->2.64e-4); synth unchanged (guards reject on iid). v6 online was 19229 @221.6s; est judge ~233s/300s
+

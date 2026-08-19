@@ -575,6 +575,70 @@ def hif4_calibration_attention(
         if U is not None:
             u_v[str(Tt)] = U.contiguous()
 
+    # ---- Q/K logit-space GPTQ: Hessians from calib[:-1] (rotated space) ----
+    u_q = None
+    u_k = None
+    gq = 0
+    if len(calib_qkv_list) >= 2:
+        Hq = torch.zeros(kvh, dh, dh)     # for K: sum over group of Q_h^T Q_h
+        Hk = torch.zeros(kvh, dh, dh)     # for Q: K_h^T K_h
+        for smp in calib_qkv_list[:-1]:
+            Tt = int(smp["q"][0].shape[0])
+            if Tt > 1024:
+                continue
+            qd = dequantize_nvfp4(*smp["q"]).float()
+            kd = dequantize_nvfp4(*smp["k"]).float()
+            if rot and R is not None:
+                qd = (qd.view(Tt, qh, dh) @ R).reshape(Tt, -1)
+                kd = (kd.view(Tt, kvh, dh) @ R).reshape(Tt, -1)
+            qv = qd.view(Tt, qh, dh)
+            kv_ = kd.view(Tt, kvh, dh)
+            for hv in range(kvh):
+                Hk[hv] += kv_[:, hv].T @ kv_[:, hv]
+                for h in range(hv * rep, (hv + 1) * rep):
+                    Hq[hv] += qv[:, h].T @ qv[:, h]
+        Uq = _upper_cholesky_inv(Hk)      # applied to Q
+        Uk = _upper_cholesky_inv(Hq)      # applied to K
+        if Uq is not None and Uk is not None:
+            T0 = int(big["q"][0].shape[0])
+            qf_ = dequantize_nvfp4(*big["q"]).float()
+            kf_ = dequantize_nvfp4(*big["k"]).float()
+            vb0 = dequantize_nvfp4(*big["v"]).float()
+            if rot and R is not None:
+                qf_rot = (qf_.view(T0, qh, dh) @ R).reshape(T0, -1)
+                kf_rot = (kf_.view(T0, kvh, dh) @ R).reshape(T0, -1)
+            else:
+                qf_rot, kf_rot = qf_, kf_
+            pq0 = _quantize_weighted(qf_rot, ones_q)
+            pk0 = _quantize_weighted(kf_rot, ones_k)
+            ref_o = _attention_out(qf_, kf_, vb0, qh, kvh, dh)
+            out_b = _attention_out(_deq_params(pq0), _deq_params(pk0), vb0, qh, kvh, dh)
+            mse_b = ((out_b - ref_o) ** 2).mean().item()
+
+            def qk_gptq_apply(pq_params, pk_params):
+                u_q_flat = _params_unit_flat(pq_params)
+                u_k_flat = _params_unit_flat(pk_params)
+                qv_flat = qf_rot.clone()
+                kv_flat = kf_rot.clone()
+                for h in range(qh):
+                    hv = h // rep
+                    xs = qf_rot[:, h * dh:(h + 1) * dh]
+                    us = u_q_flat[:, h * dh:(h + 1) * dh]
+                    qv_flat[:, h * dh:(h + 1) * dh] = _gptq_quantize_values(xs, us, Uq[hv])
+                for hv in range(kvh):
+                    xs = kf_rot[:, hv * dh:(hv + 1) * dh]
+                    us = u_k_flat[:, hv * dh:(hv + 1) * dh]
+                    kv_flat[:, hv * dh:(hv + 1) * dh] = _gptq_quantize_values(xs, us, Uk[hv])
+                return qv_flat, kv_flat
+
+            qv_flat, kv_flat = qk_gptq_apply(pq0, pk0)
+            out_gq = _attention_out(qv_flat, kv_flat, vb0, qh, kvh, dh)
+            mse_gq = ((out_gq - ref_o) ** 2).mean().item()
+            if mse_gq < mse_b:
+                gq = 1
+                u_q = Uq.contiguous()
+                u_k = Uk.contiguous()
+
     # guard on the largest calib sample at FULL length: GPTQ-V vs RTN-V
     gptq_v = 0
     u_state = None
@@ -611,9 +675,14 @@ def hif4_calibration_attention(
                 gptq_v = 1
                 u_state = u_v
 
+    q_state = {"rot": rot, "kvh": kvh}
+    k_state = {"rot": rot, "kvh": kvh}
+    if gq == 1:
+        q_state.update({"gq": 1, "u": u_q})
+        k_state.update({"gq": 1, "u": u_k})
     return {
-        "q_state": {"rot": rot},
-        "k_state": {"rot": rot},
+        "q_state": q_state,
+        "k_state": k_state,
         "v_state": ({"u": u_state, "g": 1} if gptq_v else None),
     }
 
@@ -661,12 +730,31 @@ def _dyn_table(x: torch.Tensor, state: dict | None, has_scale: bool) -> dict[str
 
 def _dyn_qk(quant, scale, state, num_heads, head_dim):
     x = dequantize_nvfp4(quant, scale).float()
-    if isinstance(state, dict) and state.get("rot") == 1:
+    rot = isinstance(state, dict) and state.get("rot") == 1
+    if rot:
         R = _make_R(head_dim)
         if R is not None:
             T = x.shape[0]
             x = (x.view(T, num_heads, head_dim) @ R).reshape(T, -1).contiguous()
-    return _dyn_table(x, None, has_scale=False)
+    p = _dyn_table(x, None, has_scale=False)
+    if isinstance(state, dict) and state.get("gq") == 1:
+        u = state.get("u")
+        kvh_n = state.get("kvh")
+        if isinstance(u, torch.Tensor) and isinstance(kvh_n, int) and num_heads % kvh_n == 0:
+            rep_n = num_heads // kvh_n
+            T = x.shape[0]
+            unit = _params_unit_flat(p)
+            q_flat = x.clone()
+            for h in range(num_heads):
+                hv = h // rep_n
+                if hv >= u.shape[0]:
+                    break
+                xs = x[:, h * head_dim:(h + 1) * head_dim]
+                us = unit[:, h * head_dim:(h + 1) * head_dim]
+                q_flat[:, h * head_dim:(h + 1) * head_dim] = _gptq_quantize_values(
+                    xs, us, u[hv].float())
+            return _values_to_params(q_flat.contiguous(), p)
+    return p
 
 
 def _dyn_qk_norot(quant, scale, state):
