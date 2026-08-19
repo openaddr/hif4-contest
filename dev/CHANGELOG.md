@@ -14,3 +14,7 @@
 - artifact: dist/solution_v4.zip
 - note: v4: Q/K per-head Hadamard rotation (exact attention invariant, per-group on/off decided on calib, kills outlier structure); linear weight-guidance clamped to [0.25,4]x mean; dropped beta smoothing + gradient-gamma machinery (overfit culprits per synthetic ablation); fixed local eval baseline bug (baseline activations now quantized). Synthetic: lin +22.7%/worst +19.0, attn +30.1%/worst +19.8 (v3: 18.3/-1.9, 15.8/9.0). Mini: +6.31/10. Runtime local ~107s
 
+## v5 - 2026-08-19 21:38:10
+- artifact: dist/solution_v5.zip
+- note: v5: GPTQ error compensation, hold-out guarded (H from calib[:-1], eval on calib[-1]): weight side 0.086x RTN on real mini data (11x); activation side via quantized-weight Gram; V via attention-prob Gram per length. Dropped channel-energy weighting (hurt output MSE 1.46x). Exact alg1 baseline confirmed by probe(=0). mini: lin +90-97%, attn +29-42%; synth worst-case: lin +28%/worst +19.6 (guards reject GPTQ there). Est judge time ~170s/300s
+

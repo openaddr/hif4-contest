@@ -29,12 +29,12 @@ lin = torch.load(os.path.join(root, "linear.pt"), weights_only=True, map_locatio
 w_ref = hif4.dequantize_nvfp4(*lin["weight"])
 cal = SOL.hif4_calibration_and_quantize_weight(*lin["weight"], lin["calib_activation_list"])
 w_play = hif4.hif4_dequantize(cal["weight_params"])
-w_std = V.deq(V.quant_norm7(w_ref.float()))
+w_std = V.deq(V.quant_alg1(w_ref.float()))
 
 for ti, pair in enumerate(lin["test_activation_list"]):
     x_ref = hif4.dequantize_nvfp4(*pair)
     ref = hif4.linear_ref(x_ref, w_ref)
-    x_std = V.deq(V.quant_norm7(x_ref.float()))
+    x_std = V.deq(V.quant_alg1(x_ref.float()))
     mse_std = ((hif4.linear_ref(x_std, w_std) - ref) ** 2).mean().item()
     p = SOL.hif4_dynamic_quantize_activation(pair[0], pair[1], cal["activation_state"])
     mse_play = ((hif4.linear_ref(x_ref, w_play) - ref) ** 2).mean().item()
@@ -52,9 +52,9 @@ for ti, smp in enumerate(att["test"]):
     k_ref = hif4.dequantize_nvfp4(*smp["k"])
     v_ref = hif4.dequantize_nvfp4(*smp["v"])
     ref = hif4.attn_ref(q_ref, k_ref, v_ref, qh, kvh, dh)
-    qs = V.deq(V.quant_norm7(q_ref.float()))
-    ks = V.deq(V.quant_norm7(k_ref.float()))
-    vs = V.deq(V.quant_norm7(v_ref.float()))
+    qs = V.deq(V.quant_alg1(q_ref.float()))
+    ks = V.deq(V.quant_alg1(k_ref.float()))
+    vs = V.deq(V.quant_alg1(v_ref.float()))
     mse_std = ((hif4.attn_ref(qs, ks, vs, qh, kvh, dh) - ref) ** 2).mean().item()
 
     pq = SOL.hif4_dynamic_quantize_q(smp["q"][0], smp["q"][1], qh, dh, acal["q_state"])
@@ -67,5 +67,5 @@ for ti, smp in enumerate(att["test"]):
     n += 1
     print(f"[attn   t{ti}] std={mse_std:.4e} play={mse_play:.4e} score={s:+.4f}")
 
-print(f"\nTOTAL vs norm7 baseline: {total:+.4f} over {n} cases "
+print(f"\nTOTAL vs exact-alg1 baseline: {total:+.4f} over {n} cases "
       f"(=> x100 x50groups est online ≈ {total / n * 100 * 500:+.0f})")

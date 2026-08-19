@@ -53,14 +53,14 @@ def load_variant(name, patches):
 
 def score_linear(sol, group) -> float:
     w_ref = hif4.dequantize_nvfp4(*group["weight"])
-    w_std = V.deq(V.quant_norm7(w_ref.float()))
+    w_std = V.deq(V.quant_alg1(w_ref.float()))
     cal = sol.hif4_calibration_and_quantize_weight(*group["weight"], group["calib_activation_list"])
     w_play = hif4.hif4_dequantize(cal["weight_params"])
     total = 0.0
     for pair in group["test_activation_list"]:
         x_ref = hif4.dequantize_nvfp4(*pair)
         ref = hif4.linear_ref(x_ref, w_ref)
-        x_std = V.deq(V.quant_norm7(x_ref.float()))
+        x_std = V.deq(V.quant_alg1(x_ref.float()))
         mse_std = ((hif4.linear_ref(x_std, w_std) - ref) ** 2).mean().item()
         p = sol.hif4_dynamic_quantize_activation(pair[0], pair[1], cal["activation_state"])
         mse_play = ((hif4.linear_ref(hif4.hif4_dequantize(p), w_play) - ref) ** 2).mean().item()
@@ -77,9 +77,9 @@ def score_attn(sol, group) -> float:
         k_ref = hif4.dequantize_nvfp4(*smp["k"])
         v_ref = hif4.dequantize_nvfp4(*smp["v"])
         ref = hif4.attn_ref(q_ref, k_ref, v_ref, qh, kvh, dh)
-        qs = V.deq(V.quant_norm7(q_ref.float()))
-        ks = V.deq(V.quant_norm7(k_ref.float()))
-        vs = V.deq(V.quant_norm7(v_ref.float()))
+        qs = V.deq(V.quant_alg1(q_ref.float()))
+        ks = V.deq(V.quant_alg1(k_ref.float()))
+        vs = V.deq(V.quant_alg1(v_ref.float()))
         mse_std = ((hif4.attn_ref(qs, ks, vs, qh, kvh, dh) - ref) ** 2).mean().item()
         pq = sol.hif4_dynamic_quantize_q(smp["q"][0], smp["q"][1], qh, dh, cal["q_state"])
         pk = sol.hif4_dynamic_quantize_k(smp["k"][0], smp["k"][1], kvh, dh, cal["k_state"])

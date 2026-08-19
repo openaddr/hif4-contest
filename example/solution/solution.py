@@ -130,6 +130,75 @@ def _quant_chunk(xb: torch.Tensor, wblk: torch.Tensor) -> dict[str, torch.Tensor
     }
 
 
+GPTQ_BLOCK = 128
+GPTQ_DAMP = 0.01
+
+
+def _upper_cholesky_inv(H: torch.Tensor):
+    """Upper-triangular U with U^T U = H^-1 (damped). Supports (n, n) and (B, n, n).
+    Returns None on failure."""
+    d = H.diagonal(dim1=-2, dim2=-1).mean(-1).clamp_min(1e-30) * GPTQ_DAMP
+    eye = torch.eye(H.shape[-1], dtype=H.dtype)
+    if H.dim() == 2:
+        Hd = H + eye * d
+    else:
+        Hd = H + eye * d.view(-1, 1, 1)
+    try:
+        Hinv = torch.cholesky_inverse(torch.linalg.cholesky(Hd))
+        return torch.linalg.cholesky(Hinv, upper=True)
+    except Exception:
+        return None
+
+
+def _gptq_quantize_values(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
+    """Column-wise GPTQ over the last axis. x, unit: (R, C); hinv: (C, C)
+    upper Cholesky of H^-1. Returns values on the grid defined by unit."""
+    R, C = x.shape
+    W = x.clone()
+    Q = torch.empty_like(W)
+    for i1 in range(0, C, GPTQ_BLOCK):
+        i2 = min(i1 + GPTQ_BLOCK, C)
+        W1 = W[:, i1:i2].clone()
+        Q1 = torch.zeros_like(W1)
+        E1 = torch.zeros_like(W1)
+        Hi = hinv[i1:i2, i1:i2]
+        u = unit[:, i1:i2]
+        for i in range(i2 - i1):
+            w = W1[:, i]
+            ui = u[:, i]
+            m = (torch.round(w.abs() / ui * 4.0)).clamp_(0.0, 7.0) * 0.25
+            s = torch.where(w >= 0, 1.0, -1.0)
+            q = s * m * ui
+            Q1[:, i] = q
+            d = Hi[i, i]
+            E1[:, i] = (w - q) / d.clamp_min(1e-30)
+            if i < i2 - i1 - 1:
+                W1[:, i + 1:] -= E1[:, i].unsqueeze(1) * Hi[i, i + 1:].unsqueeze(0)
+        Q[:, i1:i2] = Q1
+        if i2 < C:
+            W[:, i2:] -= E1 @ hinv[i1:i2, i2:]
+            W[:, i1:i2] = W1
+    return Q
+
+
+def _params_unit_flat(p: dict) -> torch.Tensor:
+    """Flatten unit = sf*lv2*lv3 to the logical (R, C) shape."""
+    R = p["scale_factor"].shape[0]
+    nb = p["scale_factor"].shape[1]
+    unit = (p["scale_factor"] * p["scale_lv2"] * p["scale_lv3"]).expand(R, nb, 8, 2, 4)
+    return unit.reshape(R, -1)
+
+
+def _values_to_params(q_flat: torch.Tensor, p: dict) -> dict:
+    sf, lv2, lv3 = p["scale_factor"], p["scale_lv2"], p["scale_lv3"]
+    R, C = q_flat.shape
+    q = q_flat.unflatten(-1, (C // 64, 8, 2, 4))
+    unit = sf * lv2 * lv3
+    m = (torch.round(q.abs() / unit * 4.0)).clamp_(0.0, 7.0) * 0.25
+    return {"scale_factor": sf, "scale_lv2": lv2, "scale_lv3": lv3,
+            "sign": torch.sign(q), "mant": m}
+
+
 def _quantize_weighted(x2d: torch.Tensor, wgt: torch.Tensor) -> dict[str, torch.Tensor]:
     """x2d: (R, C) fp32, C % 64 == 0; wgt: (R, C) fp32 >= 0."""
     R, C = x2d.shape
@@ -254,11 +323,52 @@ def hif4_calibration_and_quantize_weight(
             best_loss, best_alpha = loss, alpha
 
     s = torch.exp(logm * best_alpha)
-    weight_params = _quantize_weighted(w / s, act_energy * s * s)
+    w_target = w / s
+    wgt_w = torch.ones(1, C, dtype=torch.float32)
+    weight_params = _quantize_weighted(w_target, wgt_w)
+    q_used = (weight_params["sign"] * weight_params["mant"] * weight_params["scale_lv3"]
+              * weight_params["scale_lv2"] * weight_params["scale_factor"]).flatten(-4, -1)
+
+    # ---- GPTQ compensation, hold-out guarded (H from calib[:-1], eval on calib[-1]) ----
+    u_act = None
+    gptq_act = 0
+    acts = [dequantize_nvfp4(aq, as_).float() * s for aq, as_ in calib_activation_list]
+    if len(acts) >= 2 and acts[-1].shape[0] >= 8:
+        H = torch.zeros(C, C, dtype=torch.float32)
+        for a in acts[:-1]:
+            H += a.T @ a
+        xh = acts[-1]
+        if xh.shape[0] > 512:
+            xh = xh[torch.randperm(xh.shape[0])[:512]].contiguous()
+        Uw = _upper_cholesky_inv(H)
+        if Uw is not None:
+            unit = _params_unit_flat(weight_params)
+            q_g = _gptq_quantize_values(w_target, unit, Uw)
+            ref = xh @ w_target.T
+            mse_r = ((xh @ q_used.T - ref) ** 2).mean().item()
+            mse_g = ((xh @ q_g.T - ref) ** 2).mean().item()
+            if mse_g < mse_r:
+                weight_params = _values_to_params(q_g, weight_params)
+                q_used = q_g.contiguous()
+        # activation-side GPTQ: Hessian from the quantized weight
+        Ua = _upper_cholesky_inv(q_used.T @ q_used)
+        if Ua is not None:
+            p_r = _quantize_weighted(xh, wgt_w)
+            xr = (p_r["sign"] * p_r["mant"] * p_r["scale_lv3"] * p_r["scale_lv2"]
+                  * p_r["scale_factor"]).flatten(-4, -1)
+            unit_x = _params_unit_flat(p_r)
+            xg = _gptq_quantize_values(xh, unit_x, Ua)
+            ref2 = xh @ w_target.T
+            mse_ar = ((xr @ q_used.T - ref2) ** 2).mean().item()
+            mse_ag = ((xg @ q_used.T - ref2) ** 2).mean().item()
+            if mse_ag < mse_ar:
+                u_act = Ua.contiguous()
+                gptq_act = 1
 
     activation_state = {
         "s": s,
-        "w_col_over_s2": w_col / (s * s).clamp_min(1e-30),
+        "u_act": u_act,
+        "g": gptq_act,
     }
     return {"weight_params": weight_params, "activation_state": activation_state}
 
@@ -280,14 +390,17 @@ def hif4_dynamic_quantize_activation(
         t = activation_state.get("s")
         if isinstance(t, torch.Tensor) and t.numel() == C:
             s = t.float()
-        t = activation_state.get("w_col_over_s2")
-        if isinstance(t, torch.Tensor) and t.numel() == C:
-            wgt = t.float()
     if s is None:
         s = torch.ones(C, dtype=torch.float32)
-    if wgt is None:
-        wgt = torch.ones(C, dtype=torch.float32)
-    return _quantize_weighted(x * s, wgt.expand(R, C))
+    p = _quantize_weighted(x * s, torch.ones(1, C, dtype=torch.float32))
+    if isinstance(activation_state, dict) and activation_state.get("g") == 1:
+        u = activation_state.get("u_act")
+        if isinstance(u, torch.Tensor) and tuple(u.shape) == (C, C):
+            xs = x * s
+            unit = _params_unit_flat(p)
+            q = _gptq_quantize_values(xs, unit, u.float())
+            return _values_to_params(q, p)
+    return p
 
 
 # =============================================================================
@@ -338,6 +451,7 @@ def hif4_calibration_attention(
     is consumed directly by the judge).
     """
     qh, kvh, dh = q_num_heads, kv_num_heads, head_dim
+    rep = qh // kvh
     R = _make_R(dh)
 
     big = max(calib_qkv_list, key=lambda smp: smp["q"][0].shape[0])
@@ -362,18 +476,86 @@ def hif4_calibration_attention(
         return ((out - ref) ** 2).mean().item()
 
     loss_off = run(q, k)
-    if R is None:
-        rot = 0
-    else:
+    rot = 0
+    if R is not None:
         qr = (q.view(T, qh, dh) @ R).reshape(T, qh * dh)
         kr = (k.view(T, kvh, dh) @ R).reshape(T, kvh * dh)
         loss_on = run(qr, kr)
         rot = 1 if loss_on < loss_off else 0
 
+    # ---- V-side GPTQ: Hessians from calib attention probabilities ----
+    def probs_for(smp):
+        qq = dequantize_nvfp4(*smp["q"]).float()
+        kk = dequantize_nvfp4(*smp["k"]).float()
+        if rot and R is not None:
+            Tt = qq.shape[0]
+            qq = (qq.view(Tt, qh, dh) @ R).reshape(Tt, -1)
+            kk = (kk.view(Tt, kvh, dh) @ R).reshape(Tt, -1)
+        seq = qq.shape[0]
+        qf = qq.view(seq, qh, dh).transpose(0, 1)
+        kf = kk.view(seq, kvh, dh).transpose(0, 1)
+        kf = kf.repeat_interleave(rep, dim=0)
+        sc = torch.bmm(qf, kf.transpose(1, 2)) / (dh ** 0.5)
+        return torch.softmax(sc, dim=-1)          # (qh, seq, seq)
+
+    grams = {}
+    counts = {}
+    for smp in calib_qkv_list:
+        Tt = int(smp["q"][0].shape[0])
+        if Tt > 1024:
+            continue
+        P = probs_for(smp)                        # (qh, Tt, Tt)
+        g = torch.bmm(P.transpose(1, 2), P)       # (qh, Tt, Tt)
+        g = g.view(kvh, rep, Tt, Tt).sum(dim=1)   # per kv head
+        grams[Tt] = grams.get(Tt, 0) + g
+        counts[Tt] = counts.get(Tt, 0) + 1
+
+    u_v = {}
+    for Tt, g in grams.items():
+        U = _upper_cholesky_inv(g / counts[Tt])
+        if U is not None:
+            u_v[str(Tt)] = U.contiguous()
+
+    # guard on the largest calib sample at FULL length: GPTQ-V vs RTN-V
+    gptq_v = 0
+    u_state = None
+    if u_v:
+        T0 = int(big["q"][0].shape[0])
+        U0 = u_v.get(str(T0))
+        if U0 is not None:
+            qf_ = dequantize_nvfp4(*big["q"]).float()
+            kf_ = dequantize_nvfp4(*big["k"]).float()
+            vb = dequantize_nvfp4(*big["v"]).float()
+            if rot and R is not None:
+                qf_rot = (qf_.view(T0, qh, dh) @ R).reshape(T0, -1)
+                kf_rot = (kf_.view(T0, kvh, dh) @ R).reshape(T0, -1)
+            else:
+                qf_rot, kf_rot = qf_, kf_
+            pq = _quantize_weighted(qf_rot, ones_q)
+            pk = _quantize_weighted(kf_rot, ones_k)
+            qh_d = _deq_params(pq)
+            kh_d = _deq_params(pk)
+            ref_o = _attention_out(qf_, kf_, vb, qh, kvh, dh)
+            pv = _quantize_weighted(vb, ones_k)
+            out_r = _attention_out(qh_d, kh_d, _deq_params(pv), qh, kvh, dh)
+            mse_vr = ((out_r - ref_o) ** 2).mean().item()
+            unit_v = _params_unit_flat(pv)
+            q_flat = vb.clone()
+            for h in range(kvh):
+                xh = vb[:, h * dh:(h + 1) * dh]
+                uh = unit_v[:, h * dh:(h + 1) * dh]
+                qh_t = _gptq_quantize_values(xh.t().contiguous(), uh.t().contiguous(), U0[h])
+                q_flat[:, h * dh:(h + 1) * dh] = qh_t.t()
+            out_g = _attention_out(qh_d, kh_d, q_flat, qh, kvh, dh)
+            mse_vg = ((out_g - ref_o) ** 2).mean().item()
+            if mse_vg < mse_vr:
+                gptq_v = 1
+                u_state = u_v
+
     return {
         "q_state": {"rot": rot},
         "k_state": {"rot": rot},
-        "v_state": None,
+        "v_state": ({"u": u_state, "g": 1} if gptq_v else None),
     }
 
 
@@ -433,9 +615,23 @@ def _dyn_qk_norot(quant, scale, state):
     return _dyn_table(x, None, has_scale=False)
 
 
-def _dyn_v(quant, scale, state):
+def _dyn_v(quant, scale, state, kvh, dh):
     x = dequantize_nvfp4(quant, scale).float()
-    return _dyn_table(x, state, has_scale=False)
+    T, C = x.shape
+    p = _dyn_table(x, state, has_scale=False)
+    if isinstance(state, dict) and state.get("g") == 1:
+        u_map = state.get("u")
+        ut = u_map.get(str(T)) if isinstance(u_map, dict) else None
+        if isinstance(ut, torch.Tensor) and ut.shape[0] == kvh and ut.shape[1] == T:
+            unit = _params_unit_flat(p)
+            q_flat = x.clone()
+            for h in range(kvh):
+                xh = x[:, h * dh:(h + 1) * dh]
+                uh = unit[:, h * dh:(h + 1) * dh]
+                qt = _gptq_quantize_values(xh.t().contiguous(), uh.t().contiguous(), ut[h].float())
+                q_flat[:, h * dh:(h + 1) * dh] = qt.t()
+            return _values_to_params(q_flat.contiguous(), p)
+    return p
 
 
 def hif4_dynamic_quantize_q(q_quant, q_scale, q_num_heads, head_dim, q_state):
@@ -447,4 +643,4 @@ def hif4_dynamic_quantize_k(k_quant, k_scale, kv_num_heads, head_dim, k_state):
 
 
 def hif4_dynamic_quantize_v(v_quant, v_scale, kv_num_heads, head_dim, v_state):
-    return _dyn_v(v_quant, v_scale, v_state)
+    return _dyn_v(v_quant, v_scale, v_state, kv_num_heads, head_dim)
