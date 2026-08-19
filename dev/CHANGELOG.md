@@ -26,3 +26,7 @@
 - artifact: dist/solution_v7.zip
 - note: v7: + Q/K logit-space GPTQ (per-head 256x256 Hessians Q^TQ/K^TK from calib, hold-out guarded; targets softmax(Q dK^T + dQ K^T) linearization). mini attn +41%->+55%/case (t4 3.42e-4->2.64e-4); synth unchanged (guards reject on iid). v6 online was 19229 @221.6s; est judge ~233s/300s
 
+## v8 - 2026-08-19 23:22:05
+- artifact: dist/solution_v8.zip
+- note: v8: linear transform now 3-way guarded {rotation | channel permutation | none} via GPTQ-level subsample proxy (permutation = correlation-preserving outlier isolation, wins on flat/hard regimes where rotation suboptimal); activation GPTQ act-ordered. mini lin +81-85%, attn +41-55% (attn unchanged); synth lin mean 41.4%/worst 27.1 (worst improved from 34.8). Decomp probe: online lin +67.5%, attn +11.9% -> v8 targets linear. Judge est ~245s/300s
+
