@@ -130,6 +130,35 @@ def _quant_chunk(xb: torch.Tensor, wblk: torch.Tensor) -> dict[str, torch.Tensor
     }
 
 
+_H64_CACHE: torch.Tensor | None = None
+
+
+def _rot_blocks(x: torch.Tensor) -> torch.Tensor:
+    """Block-diagonal random-Hadamard rotation over each 64-channel block.
+
+    Exact dot-product invariant ((xR)(yR)^T = xy^T per block); Gaussianizes
+    intra-block structure so one outlier no longer dilutes the whole block,
+    while the E6M2 per-block scale absorbs cross-block magnitude differences.
+    Deterministic sign vectors per block index (same for X and W).
+    """
+    global _H64_CACHE
+    if _H64_CACHE is None:
+        H = torch.tensor([[1.0]])
+        while H.shape[0] < 64:
+            H = torch.cat([torch.cat([H, H], 1), torch.cat([H, -H], 1)], 0)
+        _H64_CACHE = H / 8.0
+    H64 = _H64_CACHE
+    R, C = x.shape
+    nb = C // 64
+    d = torch.empty(nb, 64)
+    for b in range(nb):
+        g = torch.Generator().manual_seed(777 + b)
+        d[b] = (torch.rand(64, generator=g) < 0.5).float() * 2 - 1
+    Rm = H64.unsqueeze(0) * d.unsqueeze(1)          # (nb, 64, 64)
+    xb = x.reshape(R, nb, 64)
+    return torch.einsum("rbd,bde->rbe", xb, Rm).reshape(R, C)
+
+
 GPTQ_BLOCK = 128
 GPTQ_DAMP = 0.01
 
@@ -247,7 +276,7 @@ def _quant_weight_fast(w: torch.Tensor, wgt: torch.Tensor) -> dict[str, torch.Te
     amax = ab.amax(dim=(2, 3, 4), keepdim=True)
     amax8 = ab.amax(dim=(3, 4), keepdim=True)
     amax4 = ab.amax(dim=4, keepdim=True)
-    wblk = (wgt.expand(R, C) if wgt.dim() == 1 else wgt).reshape(R, nb, 8, 2, 4)
+    wblk = (wgt.expand(R, C) if wgt.shape[0] == 1 and wgt.dim() == 2 else wgt).reshape(R, nb, 8, 2, 4)
     t = (amax / 7.0).clamp_min(1e-38)
     e0 = torch.floor(torch.log2(t)).squeeze(-1).squeeze(-1).squeeze(-1)
     err_best = None
@@ -282,83 +311,111 @@ def hif4_calibration_and_quantize_weight(
     weight_scale: torch.Tensor,
     calib_activation_list: list,
 ) -> dict[str, Any]:
+    """Weight path: alpha smoothing -> rotation on/off (cheap RTN proxy) ->
+    anchored search -> hold-out-guarded GPTQ -> activation-side GPTQ state.
+
+    The block-diagonal rotation is an exact matmul invariant that Gaussianizes
+    intra-block outliers; it is chosen per group by a cheap RTN-level proxy.
+    """
     w = dequantize_nvfp4(weight_quant, weight_scale).float()
     R, C = w.shape
+    ones_w = torch.ones(1, C, dtype=torch.float32)
+    acts_raw = [dequantize_nvfp4(aq, as_).float() for aq, as_ in calib_activation_list]
 
-    # activation stats per channel (use all calib tokens)
-    sq_sum = torch.zeros(C, dtype=torch.float32)
+    # ---- alpha smoothing search ----
     abs_sum = torch.zeros(C, dtype=torch.float32)
     n_tok = 0
-    for act_quant, act_scale in calib_activation_list:
-        a = dequantize_nvfp4(act_quant, act_scale).float()
-        sq_sum += (a * a).sum(dim=0)
+    a_big = None
+    for a in acts_raw:
         abs_sum += a.abs().sum(dim=0)
         n_tok += a.shape[0]
-    act_energy = sq_sum / max(n_tok, 1)          # E[x_j^2]
-    act_absmean = abs_sum / max(n_tok, 1)        # E[|x_j|]
-    w_col = (w * w).sum(dim=0)                   # sum_out W_ij^2
-
-    # ---- smoothing scale search: s = m^alpha, geometric-mean normalized ----
-    m = act_absmean.clamp_min(1e-12)
-    logm = m.log()
-    logm = logm - logm.mean()
-
-    best_alpha = 0.0
-    best_loss = None
-    # subsample rows for the search; score on the largest calib set
-    rows = torch.randperm(R)[: min(R, 256)]
-    a_big = None
-    for act_quant, act_scale in calib_activation_list:
-        a = dequantize_nvfp4(act_quant, act_scale).float()
         if a_big is None or a.shape[0] > a_big.shape[0]:
             a_big = a
-
+    m = (abs_sum / max(n_tok, 1)).clamp_min(1e-12)
+    logm = m.log()
+    logm = logm - logm.mean()
+    rows = torch.randperm(R)[: min(R, 256)]
+    best_alpha = 0.0
+    best_loss = None
     for alpha in ALPHA_GRID:
         s = torch.exp(logm * alpha)
-        wp = _quant_weight_fast(w[rows] / s, act_energy * s * s)
+        wp = _quant_weight_fast(w[rows] / s, torch.ones(1, C))
         wq = (wp["sign"] * wp["mant"] * wp["scale_lv3"] * wp["scale_lv2"]
               * wp["scale_factor"]).flatten(-4, -1) * s
         loss = ((a_big @ wq.T - a_big @ w[rows].T) ** 2).mean().item()
         if best_loss is None or loss < best_loss:
             best_loss, best_alpha = loss, alpha
-
     s = torch.exp(logm * best_alpha)
-    w_target = w / s
-    wgt_w = torch.ones(1, C, dtype=torch.float32)
-    weight_params = _quantize_weighted(w_target, wgt_w)
+    w_s = w / s
+    acts_s = [a * s for a in acts_raw]
+
+    # ---- rotation choice: GPTQ-level comparison on a weight-row subsample
+    # (RTN-level margins are too noisy; rotation pays mainly through GPTQ) ----
+    rot = 0
+    U_rot = None
+    U_raw = None
+    rsub = None
+    xh_pick = None
+    if R > 64 and len(acts_s) >= 2 and acts_s[-1].shape[0] >= 8:
+        rsub = torch.randperm(R)[: min(R, 256)]
+        xh_last = acts_s[-1]
+        sub = torch.randperm(xh_last.shape[0])[: min(xh_last.shape[0], 128)]
+        H_r = torch.zeros(C, C, dtype=torch.float32)
+        H_o = torch.zeros(C, C, dtype=torch.float32)
+        for a in acts_s[:-1]:
+            ar = _rot_blocks(a)
+            H_r += ar.T @ ar
+            H_o += a.T @ a
+        U_r = _upper_cholesky_inv(H_r)
+        U_o = _upper_cholesky_inv(H_o)
+        xh_pick_rot = _rot_blocks(xh_last)[sub].contiguous()
+        xh_pick_raw = xh_last[sub].contiguous()
+        mse_A = mse_B = None
+        if U_r is not None and U_o is not None:
+            w_rsub_rot = _rot_blocks(w_s[rsub])
+            pA = _quant_weight_fast(w_rsub_rot, torch.ones(1, C))
+            qA = _gptq_quantize_values(w_rsub_rot, _params_unit_flat(pA), U_r)
+            mse_A = ((xh_pick_rot @ qA.T - xh_pick_rot @ w_rsub_rot.T) ** 2).mean().item()
+            pB = _quant_weight_fast(w_s[rsub], torch.ones(1, C))
+            qB = _gptq_quantize_values(w_s[rsub], _params_unit_flat(pB), U_o)
+            mse_B = ((xh_pick_raw @ qB.T - xh_pick_raw @ w_s[rsub].T) ** 2).mean().item()
+        if mse_A is not None and mse_B is not None and mse_A < mse_B:
+            rot = 1
+            U_rot = U_r
+            xh_pick = xh_pick_rot
+        else:
+            U_raw = U_o
+            xh_pick = xh_pick_raw
+
+    w_final = _rot_blocks(w_s) if rot else w_s
+    Uw = U_rot if rot else U_raw
+
+    # ---- anchored search + hold-out-guarded GPTQ on the chosen variant ----
+    weight_params = _quantize_weighted(w_final, ones_w)
     q_used = (weight_params["sign"] * weight_params["mant"] * weight_params["scale_lv3"]
               * weight_params["scale_lv2"] * weight_params["scale_factor"]).flatten(-4, -1)
-
-    # ---- GPTQ compensation, hold-out guarded (H from calib[:-1], eval on calib[-1]) ----
-    u_act = None
-    gptq_act = 0
-    acts = [dequantize_nvfp4(aq, as_).float() * s for aq, as_ in calib_activation_list]
-    if len(acts) >= 2 and acts[-1].shape[0] >= 8:
-        H = torch.zeros(C, C, dtype=torch.float32)
-        for a in acts[:-1]:
-            H += a.T @ a
-        xh = acts[-1]
-        if xh.shape[0] > 512:
-            xh = xh[torch.randperm(xh.shape[0])[:512]].contiguous()
-        Uw = _upper_cholesky_inv(H)
-        if Uw is not None:
+    if xh_pick is not None and Uw is not None:
             unit = _params_unit_flat(weight_params)
-            q_g = _gptq_quantize_values(w_target, unit, Uw)
-            ref = xh @ w_target.T
-            mse_r = ((xh @ q_used.T - ref) ** 2).mean().item()
-            mse_g = ((xh @ q_g.T - ref) ** 2).mean().item()
+            q_g = _gptq_quantize_values(w_final, unit, Uw)
+            ref = xh_pick @ w_final.T
+            mse_r = ((xh_pick @ q_used.T - ref) ** 2).mean().item()
+            mse_g = ((xh_pick @ q_g.T - ref) ** 2).mean().item()
             if mse_g < mse_r:
                 weight_params = _values_to_params(q_g, weight_params)
                 q_used = q_g.contiguous()
-        # activation-side GPTQ: Hessian from the quantized weight
+
+    # ---- activation-side GPTQ ----
+    u_act = None
+    gptq_act = 0
+    if xh_pick is not None:
         Ua = _upper_cholesky_inv(q_used.T @ q_used)
         if Ua is not None:
-            p_r = _quantize_weighted(xh, wgt_w)
+            p_r = _quantize_weighted(xh_pick, ones_w)
             xr = (p_r["sign"] * p_r["mant"] * p_r["scale_lv3"] * p_r["scale_lv2"]
                   * p_r["scale_factor"]).flatten(-4, -1)
             unit_x = _params_unit_flat(p_r)
-            xg = _gptq_quantize_values(xh, unit_x, Ua)
-            ref2 = xh @ w_target.T
+            xg = _gptq_quantize_values(xh_pick, unit_x, Ua)
+            ref2 = xh_pick @ w_final.T
             mse_ar = ((xr @ q_used.T - ref2) ** 2).mean().item()
             mse_ag = ((xg @ q_used.T - ref2) ** 2).mean().item()
             if mse_ag < mse_ar:
@@ -366,7 +423,8 @@ def hif4_calibration_and_quantize_weight(
                 gptq_act = 1
 
     activation_state = {
-        "s": s,
+        "s": s.contiguous(),
+        "rot": rot,
         "u_act": u_act,
         "g": gptq_act,
     }
@@ -385,20 +443,21 @@ def hif4_dynamic_quantize_activation(
     x = dequantize_nvfp4(activation_quant, activation_scale).float()
     R, C = x.shape
     s = None
-    wgt = None
     if isinstance(activation_state, dict):
         t = activation_state.get("s")
         if isinstance(t, torch.Tensor) and t.numel() == C:
             s = t.float()
     if s is None:
         s = torch.ones(C, dtype=torch.float32)
-    p = _quantize_weighted(x * s, torch.ones(1, C, dtype=torch.float32))
+    x = x * s
+    if isinstance(activation_state, dict) and activation_state.get("rot") == 1:
+        x = _rot_blocks(x)
+    p = _quantize_weighted(x, torch.ones(1, C, dtype=torch.float32))
     if isinstance(activation_state, dict) and activation_state.get("g") == 1:
         u = activation_state.get("u_act")
         if isinstance(u, torch.Tensor) and tuple(u.shape) == (C, C):
-            xs = x * s
             unit = _params_unit_flat(p)
-            q = _gptq_quantize_values(xs, unit, u.float())
+            q = _gptq_quantize_values(x, unit, u.float())
             return _values_to_params(q, p)
     return p
 

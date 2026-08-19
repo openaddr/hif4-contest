@@ -18,3 +18,7 @@
 - artifact: dist/solution_v5.zip
 - note: v5: GPTQ error compensation, hold-out guarded (H from calib[:-1], eval on calib[-1]): weight side 0.086x RTN on real mini data (11x); activation side via quantized-weight Gram; V via attention-prob Gram per length. Dropped channel-energy weighting (hurt output MSE 1.46x). Exact alg1 baseline confirmed by probe(=0). mini: lin +90-97%, attn +29-42%; synth worst-case: lin +28%/worst +19.6 (guards reject GPTQ there). Est judge time ~170s/300s
 
+## v6 - 2026-08-19 22:25:03
+- artifact: dist/solution_v6.zip
+- note: v6: + block-diagonal 64-dim random-Hadamard rotation for linear (exact matmul invariant, Gaussianizes intra-block outliers; on/off chosen per group by GPTQ-level proxy on weight subsample — RTN-level proxy proved too noisy). Rotation+GPTQ synergistic on mini (weight-side 0.22x alg1) and synth. Fixed diag3 eval bug (player activations were unquantized). mini: lin +81-85%/case, attn +29-42%; synth: lin +42%/worst +35, attn +9%. Judge time est 165-218s/300s
+

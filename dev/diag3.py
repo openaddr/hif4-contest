@@ -37,7 +37,8 @@ for ti, pair in enumerate(lin["test_activation_list"]):
     x_std = V.deq(V.quant_alg1(x_ref.float()))
     mse_std = ((hif4.linear_ref(x_std, w_std) - ref) ** 2).mean().item()
     p = SOL.hif4_dynamic_quantize_activation(pair[0], pair[1], cal["activation_state"])
-    mse_play = ((hif4.linear_ref(x_ref, w_play) - ref) ** 2).mean().item()
+    x_play = hif4.hif4_dequantize(p)
+    mse_play = ((hif4.linear_ref(x_play, w_play) - ref) ** 2).mean().item()
     s = (mse_std - mse_play) / mse_std
     total += s
     n += 1

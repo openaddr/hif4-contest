@@ -1,0 +1,758 @@
+
+===== PAGE 1 =====
+HiFloat4 Format for Language Model Inference
+Yuanyong Luo*, Jing Huang,Yu Cheng, Ziwei Yu, Kaihua Tang, Xinda Ma, Xin Wang, Anping Tong,
+Guipeng Hu, Yun Xu, Mehran Taghian, Peng Wu, Guanglin Li, Yunke Peng, Tianchi Hu,
+Minqi Chen, Michael Bi Mi, Hu Liu, Xiping Zhou, Junsong Wang, Qiang Lin, Heng Liao
+Huawei
+*Email: luoyuanyong@{hisilicon.com, yeah.net}
+Abstract—This paper introduces HiFloat4 (HiF4), a block
+floating-point data format tailored for deep learning. Each
+HiF4 unit packs 64 4-bit elements with 32 bits of shared
+scaling metadata, averaging 4.5 bits per value. The metadata
+specifies a three-level scaling hierarchy, capturing inter- and
+intra-group dynamic range while improving the utilization of
+the representational space. In addition, the large 64-element
+group size enables matrix multiplications to be executed in a
+highly fixed-point manner, significantly reducing hardware area
+and power consumption. To evaluate the proposed format, we
+conducted inference experiments on several language models,
+including LLaMA, Qwen, Mistral, DeepSeek-V3.1 and LongCat.
+Results show that HiF4 achieves higher average accuracy than
+the state-of-the-art NVFP4 format across multiple models and
+diverse downstream tasks.
+Index Terms—Block Floating-Point Format, Large Language
+Model, Deep Learning, Inference.
+I. INTRODUCTION
+In recent years, the rapid growth of large language models
+(LLMs) [1] has intensified the trade-offs among computa-
+tional throughput, memory capacity, and energy efficiency [2].
+These challenges have driven the community to investigate
+low-precision data formats as a promising solution. Several
+emerging 8-bit formats, including FP8 [3], HiF8 [4], [5], and
+MXFP8 [6], [7], have already been deployed in commercial
+hardware products to accelerate deep learning workloads. Yet,
+as model sizes and context lengths continue to expand, the
+exploration of low-precision formats has naturally advanced
+toward the 4-bit frontier. Although MXFP8, as a Block Floating-
+Point (BFP) format, trades off performance for training stability,
+BFP currently appears to be the most practical pathway for 4-bit
+representation. Because further reductions in bit-width can only
+be realized by more effectively exploiting exponent redundancy
+within localized data. In the following, we examine 3 influential
+4-bit BFP designs outlined in Figure 1, each representing a
+technical advancement and introducing a new perspective.
+MX4: Shared Micro-Exponents
+To characterize intra-group variation, Microsoft and Meta
+proposed the MX4 format [8], which augments the shared
+8-bit exponent [9] with 8-way 1-bit micro-exponents, forming
+a two-level hierarchical scaling structure. However, since MX4
+uses a group size of 16, the metadata incurs a relatively high
+overhead of 1 bit per value. To keep the average storage below
+5 bits per element, the in-group sign-magnitude format must be
+reduced from 4 to 3 bits, resulting in an average storage cost
+of 4 bits per value. This reduction ultimately causes MX4 to
+deliver even lower accuracy than the vanilla 4-bit BFP format
+[9]. Consequently, AMD’s Versal AI Edge series adopted only
+the related MX6 and MX9 formats, abandoning MX4 [10]. In
+summary, MX4 illustrates the conceptual value of shared micro-
+exponents for capturing intra-group variation, yet the metadata
+cost — exacerbated by the small group size — prevents the
+format from achieving practical accuracy and efficiency.
+MXFP4: Individual Micro-Exponent
+OCP-MXFP4 assigns an individual 2-bit micro-exponent to
+each element, enabling finer intra-group variation [11]. Typ-
+ically, the 4-bit in-group format is the sign-magnitude S1P2,
+where S denotes the sign bit, the 1 before P indicates a 1-bit
+integer part, and the 2 after P indicates a 2-bit fractional part (P
+is the binary point). This is equivalent to the common E1M2 in
+floating-point style, where the sign bit is usually omitted. E1M2
+provides at most 3-bit significand but only a limited dynamic
+range of log2(1.75/0.25) = 2.81 binades. MXFP4 replaces
+E1M2 with E2M1, sacrificing 1 bit significand to introduce a
+2-bit micro-exponent, thereby expanding the dynamic range to
+log2(6/0.5) = 3.58 binades. The group size is also enlarged to
+32, with an average storage cost of 4.25 bits per value. MXFP4
+has been adopted by several hardware vendors, including Nvidia
+[12], AMD [7], and Huawei [4]. However, it is now widely
+recognized that MXFP4 suffers from significant accuracy
+degradation when applied to both activations and weights
+[13]. As a result, it is currently employed only for weight-
+only quantization, as in OpenAI’s GPT-OSS [14], leaving the
+substantial 4-bit computing power unused. In summary, MXFP4
+introduces a new trade-off between significand precision and
+intra-group dynamic range, but still fails to achieve the full
+potential of 4-bit BFP.
+NVFP4: Floating-Point Scale
+In addition to MXFP4, the Blackwell architecture also supports
+a proprietary NVFP4 format, which leverages the advantages
+of E2M1 over E1M2 and introduces two changes [12]. First,
+power-of-two scale cannot guarantee to normalize each group’s
+peak magnitude to the representable upper bound of E2M1,
+wasting intra-group dynamic range. NVFP4 replaces it with
+a fine-grained FP8-E4M3 floating-point scale, fully utilizing
+E2M1’s expressive space. Second, NVFP4 adopts the same
+16-element group size as MXF4 [8], raising the average storage
+cost from 4.25 to 4.5 bits per value compared to MXFP4, but
+effectively reducing outlier-driven quantization error. Conse-
+quently, NVFP4 achieves better accuracy than MXFP4 and
+can be used for both weights and activations, thereby initially
+arXiv:2602.11287v2  [cs.LG]  13 Feb 2026
+
+===== PAGE 2 =====
+Fig. 1: The Structure of Three 4-bit Block Floating-Point Formats
+unlocking practical 4-bit BFP computing power. The benefits,
+however, come at two heavy costs. First, the dynamic range of
+E4M3 is not wide enough. NVFP4 requires additional software-
+based per-tensor scaling (PTS) for both inference [15] and
+training [16], incurring performance degradation during format
+conversion. Second, when considering higher computing power
+compared to 8-bit formats, pairing a floating-point scale with a
+small group size leads to substantial area and power overhead in
+matrix-compute units. In summary, NVFP4 employs a floating-
+point scale to fully utilize the intra-group dynamic range, albeit
+with substantial hardware and software cost.
+From a comprehensive standpoint, the preceding analysis
+underscores the inherent complexity of designing a 4-bit BFP
+format. MX4 and MXFP4 characterize intra-group variation
+using distinct micro-exponent mechanisms, while NVFP4
+further emphasizes the importance of maximizing intra-group
+dynamic range utilization. Each approach entails trade-offs
+across multiple design dimensions, such as metadata overhead,
+group size, significand precision, and both intra- and inter-group
+dynamic ranges. Despite the applicability of NVFP4 to both
+weights and activations, its limitations in accuracy, inter-group
+dynamic range, and hardware efficiency remain pronounced.
+These shortcomings highlight the ongoing challenge of realizing
+practical and efficient 4-bit BFP computation.
+Through multiple rounds of analysis and iteration, we
+identified a suitable technical entry point and proposed a
+new 4-bit BFP format, HiF4. Compared with the state-of-
+the-art, HiF4 delivers higher accuracy, broader inter-group
+dynamic range suitable for both inference and training, and
+lower hardware cost. In this paper, we describe the specification
+of HiF4, including the format definition and conversion. We
+then present comparisons of quantization error and dot-product
+compute flow between different 4-bit BFP formats. Finally,
+extensive experimental results on LLM inference are reported
+to demonstrate the feasibility and advantages of HiF4.
+II. HIFLOAT4
+This section provides a systematic description of the
+proposed 4-bit BFP format HiF4, and details its structural
+components. We then present the conversion algorithm from
+BF16 to HiF4, along with the suggested hardware support.
+A. Format Definition
+As shown in Figure 2, a basic HiF4 unit consists of 32
+bits shared scaling metadata, and 64 4-bit in-group elements,
+resulting in an average storage of 4.5 bits per value. The
+following defines each component in detail.
+Fig. 2: The Structure of HiF4 Block Floating-Point Format
+1) Scaling Metadata:The metadata defines a three-level
+scaling hierarchy. The first level (E6M2) is a specially designed
+unsigned 8-bit floating-point format. This scale provides a wide
+dynamic range across groups and normalizes each group’s peak
+magnitude to the representable upper bound of the remaining
+hierarchical format structure, ensuring full utilization of the
+intra-group dynamic range. Table I summarizes the encoding
+details of E6M2. We assign 6 bits to the exponent field with a
+bias of 48, and 2 bits to the mantissa field with one hidden
+integer bit set to 1. E6M2 encodes NaN (Not a Number) but no
+other special values such as infinity or zero. Meanwhile, only
+normal mode is supported. Thus if we denote the unbiased
+exponent as E and the mantissa as M, an E6M2 number used
+in HiF4 should be interpreted as follows:
+X= 2 E×1.M(1)
+2
+
+===== PAGE 3 =====
+TABLE I: E6M2 and S1P2 Encoding Details
+Unsigned FP8-E6M2 Sign-Magnitude S1P2
+Exponent Bias 48 N/A
+Unbiased Exp [-48, 15] N/A
+Infinity N/A N/A
+Zero N/A S0.00 2 =±0.00
+NaN111111_11 2 N/A
+Max Value111111_10 2 = 2 15 ×1.50S1.11 2 =±1.75
+Min Value000000_00 2 = 2 −48 ×1.00S0.01 2 =±0.25
+The second (E1_8) and third (E1_16) levels, implemented as
+8-way and 16-way 1-bit micro-exponents, expand the intra-
+group dynamic range by refining local exponent differences,
+effectively mitigating the impact of outliers and suppressing
+quantization error. Micro-exponent E1 directly encodes 1
+and 0, representing a very fine-grained power-of-two scaling
+factor. In this hierarchical scaling scheme, the level-1 E6M2
+factor provides a global base scale connected to all level-
+2 micro-exponents. Each level-2 E1 further connects to two
+adjacent third-level micro-exponents, while each level-3 E1
+in turn connects to four contiguous 4-bit elements within its
+local group. All three-level scaling metadata occupies 32 bits,
+distributed over 64 in-group elements, leading to an extra
+overhead of 0.5 bits per value.
+2) Element Encoding:HiF4 encodes the 4-bit in-group
+elements using the sign-magnitude S1P2 representation. In
+this SXPY notation, S denotes the sign bit and P indicates
+the binary point. The value X preceding P designates a X-bit
+integer part, whereas the value Y following P designates a Y-bit
+fractional part. The encoding details of S1P2 are summarized in
+Table I. Conceptually, S1P2 is equivalent to the E1M2 format
+in floating-point representation; however, we adopt the S1P2
+notation because it is more intuitive to interpret.
+3) Represented Values:Since we have elaborated on each
+component, we can now look at the HiF4 unit as a whole
+and compute its represented values. As depicted in Figure 2,
+a single group in the HiF4 format comprises four levels of
+data, which are related through multiplication. Let {S1P2} i
+denote the i-th in-group element value, where i ∈ [1, 64]. Let
+{E1_8}j denote the j-th micro-exponent in the level-2 scaling
+metadata, where j ∈ [1, 8]. Similarly, let {E1_16}k denote
+the k-th micro-exponent in the level-3 scaling metadata, where
+k∈ [1, 16]. Finally, let {Vi}64
+i=1 represent the 64 real numbers
+in a HiF4 group. Based on these definitions, each value of a
+HiF4 unit can be expressed as follows:
+•IfE6M2 =NaN, thenV i =NaNfor all i∈[1, 64]
+•Otherwise,
+Vi =E6M2×2 ({E1_8}⌈i/8⌉+{E1_16}⌈i/4⌉)×{S1P2} i (2)
+As formulated in Equation 2, the remaining blue part —
+beyond the global base scale E6M2 — indicates the intra-
+group dynamic range that a HiF4 unit can cover: the maximum
+positive value is 2(1+1)×1.75 = 7 , while the minimum positive
+value is 2(0+0)×0.25 = 0.25 . Thus the available intra-group
+dynamic range of HiF4 is log2(7/0.25) = 4.81 binades. Some
+TABLE II: Typical Values and Features for HiF4 and NVFP4
+HiF4 NVFP4
+Storage Overhead 4.5 bits/value 4.5 bits/value
+Group Size 64 16
+Special Values NaN and±0NaN and±0
+4-bit Element S1P2 (E1M2) E2M1
+Significand Precision 3 bits 2 bits
+Global Base Scale E6M2 E4M3
+Max Positive Value2 18 ×1.3125 2 11 ×1.3125
+Min Positive Value2 −50 2−10
+Global Dynamic Range [-50, 18]: 69 binades [-10, 11]: 22 binades
+Local Dynamic Range 4.81 binades 3.58 binades
+typical values and features of HiF4 and the state-of-the-art
+NVFP4 [16] are outlined in Table II.
+B. Format Conversion
+Algorithm 1 illustrates the computational flow for converting
+a vector of 64 BF16 data into a HiF4 unit. The similar
+conversion procedure applies to other high-precision formats,
+such as FP32 and FP16.
+Algorithm 1Conversion from BF16 to HiF4
+Require:A 64-length BF16 Vector:V64
+Ensure:A HiF4 Unit: E6M2, E1_8, E1_16, S1P2_64
+1:fori= 1 to 16do
+2:16 Local Peak Magnitudes:
+V16[i] = max(|V64[4×i−3 : 4×i]|)
+3:end for
+4:fori= 1 to 8do
+5:8 Local Peak Magnitudes:
+V8[i] = max(V16[2×i−1 : 2×i])
+6:end for
+7:Global Peak Magnitude:Vmax= max(V8)
+8:High-Precision Scale Factor:
+SFBF16 =Vmax×(1/7) BF16
+9:Level-1 Scale Factor:
+E6M2 =BF16_to_E6M2(SF BF16 )
+10:Reciprocal of E6M2:
+E6M2_REC=E6M2_REC_to_BF16(E6M2)
+11:Level-2 Scale Factors:
+E1_8 = (V8×E6M2_REC≥4)? 1 : 0
+12:fori= 1 to 16do
+13:Level-3 Scale Factors:E1_16[i] =
+(V16[i]×E6M2_REC×2 −E1_8[⌈i/2⌉]≥2)? 1 : 0
+14:end for
+15:fori= 1 to 64do
+16:High-Precision Elements:V64_scaled[i] =
+V64[i]×E6M2_REC×2 −E1_8[⌈i/8⌉]×2−E1_16[⌈i/4⌉]
+17:end for
+18:In-Group S1P2 Elements:
+S1P2_64 =BF16_to_S1P2(V64_scaled)
+The format conversion algorithm is decomposed into three
+sequential stages.
+Stage 1(lines 1-7) performs a three-level tree reduction on
+the 64 BF16 inputs.
+3
+
+===== PAGE 4 =====
+• In the first level, adjacent groups of 4 elements are compared
+in parallel, yielding 16 local maximum absolute values.
+• The second level pairwise-reduces 16 maxima into 8 values.
+• The final level obtains the global maximum absolute value
+across the 8 results.
+Stage 2(lines 8-14) derives the three-level hierarchical scaling
+metadata.
+• Lines 8-9 compute the level-1 scale factor, in which 7 is
+the maximum absolute value that the intra-group structure
+can represent, and division by a constant is replaced by
+multiplication with its reciprocal to avoid performance
+degradation. Then a dedicated BF16 to E6M2 instruction is
+required to quantize the scale into E6M2 format.
+• Lines 10-11 generate 8 level-2 micro-exponents, in which
+a bespoke reciprocal instruction that operates directly on
+E6M2 and returns BF16 eliminates explicit division. Then
+8 parallel multiply-compare operations produce the E1_8.
+• Lines 12-14 evaluate 16 level-3 micro-exponents. Observe
+that 2−E1 collapses to either 0.5 or 1. Therefore, special
+bypass mode of multiply instruction can be realized to
+compute theBF16×2 −E1 value.
+Stage 3(lines 15-18) calculates the 64 in-group elements.
+• Line 16 applies the three-level HiF4 scaling factors to the
+original 64 BF16 inputs.
+• Line 18 quantizes the scaled results into S1P2 format. If
+the results after rounding exceed the representable range
+of S1P2, it should be clamped to the nearest representable
+bound, preserving the sign.
+All rounding operations in BF16 to HiF4 conversion should
+use round-half-to-even or round-half-away-from-zero. More-
+over, since E6M2 has no subnormal numbers, the proposed
+E6M2_REC_to_BF16 conversion instruction can be efficiently
+implemented using only a 4-entry lookup table indexed by the
+input 2-bit mantissa and simple exponent subtractions, to derive
+the output mantissa and exponent respectively. Meanwhile,
+some fused instructions such as multiply-compare and multiply-
+convert, can further accelerate the HiF4 conversion process.
+III. QUANTIZATIONERROR ANDDOTPRODUCT
+This section first characterizes the quantization errors of
+different 4-bit BFP formats, then analyzes the complexity of
+dot product computation for HiF4 and NVFP4.
+A. Quantization Error Evaluation
+We generated 18 high-precision Gaussian-distributed random
+matrices of size 1024×1024, each with zero mean and standard
+deviation σ= 0.01×2 x, where x∈[0,17] . Every matrix was
+converted to three 4-bit BFP formats. HiF4 followed Algorithm
+1. MXFP4 adopted the method described in [13]. NVFP4
+employed E4M3 scaling to normalize the peak magnitude of
+each group to 6, the representable upper bound of E2M1.
+Since only NVFP4 lacks sufficient dynamic range and requires
+additional software-based PTS, two versions were prepared for
+fair comparison: a direct cast and a pipeline that first scales
+each tensor’s peak magnitude to 2688 and then quantizes to
+Fig. 3: Quantization Error Comparison of 4-bit BFP Formats
+NVFP4 [15]. We computed the mean squared error (MSE)
+relative to the original high-precision matrix for each format
+and normalized the results with respect to HiF4.
+Figure 3 depicts the quantization error of HiF4, MXFP4, and
+NVFP4. When data values approach the numeric bounds of
+NVFP4, overflow and underflow cause the quantization error to
+increase significantly. Applying PTS before format conversion
+can eliminate this precision loss. In contrast, HiF4 and MXFP4
+do not require PTS, thus incurring no additional quantization
+overhead. Excluding NVFP4’s fluctuation, the MSE ratio across
+the three 4-bit BFP formats remains stable:
+HiF4 : NVFP4 : MXFP4= 1 : 1.32 : 1.89
+Note that although the Gaussian distribution matches the cen-
+tralized nature of the data in neural networks, the quantization
+error may vary in practical scenarios. The experimental results
+serve as a quantitative reference for analyzing the accuracy of
+different 4-bit BFP formats.
+B. Dot Product Evaluation
+Let A:{E6M2 (A),E1_8 (A),E1_16 (A),S1P2_64 (A)} and
+B:{E6M2 (B),E1_8 (B),E1_16 (B),S1P2_64 (B)} denote the
+two HiF4 units. The dot product of A and B should be computed
+as follows:
+Dot(A,B) =E6M2 (A)×E6M2 (B)×
+8X
+i=1
+2(E1_8(A)[i]+E1_8(B) [i])×
+2iX
+j=2i−1
+2(E1_16(A)[j]+E1_16 (B) [j])×
+4jX
+k=4j−3
+(S1P2_64 (A)[k]×S1P2_64 (B)[k])(3)
+In hardware, a processing element (PE) that performs a K-
+length dot product and accumulation in parallel is a fundamental
+4
+
+===== PAGE 5 =====
+Fig. 4: Compute Flow of 64-length Dot Product for HiF4 and NVFP4
+building block of matrix-compute units, such as Nvidia GPU’s
+Tensor Cores [17] and Ascend NPU’s Cube Cores [18]. To
+double the computing power of 4-bit BFP formats relative to
+8-bit floating-point formats, both Tensor Cores and Cube Cores
+now require PEs to support 64-length dot products [4], [6].
+Under these conditions, a single pair of HiF4 units suffices to
+match the PE input width, since their group size is exactly 64.
+In contrast, four pairs of NVFP4 units are required to support a
+64-length dot product in a PE, because their group size is only
+16. Next, we briefly analyze the compute flow of HiF4 and
+NVFP4 in a 64-length dot product to reveal their differences
+in power and area consumption.
+For the HiF4 dot product, level-2 and level-3 micro-
+exponents can be implemented as simple left-shift operations
+in hardware. There are many opportunities to absorb the micro-
+exponents into the computations related to the S1P2 elements,
+depending on the implementation strategy. In our example
+compute flow, we directly absorb the level-3 micro-exponents
+into the S1P2 elements prior to multiplications. In this way,
+multiplier inputs become 5-bit integers, which can be denoted
+as S2P2 (for simplicity, we continue using the SXPY notation).
+Similarly, E2M1 elements in NVFP4 are converted into 5-bit
+integers (S3P1) before multiplications. Figure 4 illustrates the
+compute flow of 64-length dot product for both formats. During
+the compression from 64 products to a single S12P4 output,
+HiF4 employs pure integer arithmetic, requiring only one small
+floating-point multiplier and one large integer multiplier at
+the final stage of the accumulation tree. In contrast, NVFP4
+retains integer operations only during the reduction from 64
+products to four S10P2 outputs, after which four small floating-
+point multipliers and four large integer multipliers are required.
+The final accumulation from four partial results to the output
+is then performed entirely in floating-point. Consequently,
+HiF4 eliminates six multipliers and simplifies the accumulation
+process compared with NVFP4.
+In practice, 4-bit BFP formats are integrated into existing dot-
+product units originally optimized for 16-bit (FP16 and BF16)
+and 8-bit (INT8 and Float8) formats. Although resource sharing
+is feasible across different precision modes, high-precision
+formats do not require intermediate and final multipliers
+within the accumulation tree. Thus, the additional multipliers
+introduced by floating-point metadata E6M2 and E4M3 incur
+extra hardware overhead. As a result, for 64-length dot product,
+HiF4 occupies only approximately one-third the incremental
+area of NVFP4 and reduces the power consumption by about
+10%. In summary, HiF4 enables a more area- and power-
+efficient implementation for matrix multiplication.
+IV. LANGUAGEMODELINFERENCE WITHHIFLOAT4
+This section conducts a comprehensive inference evaluation
+of Post-Training Quantization (PTQ) across diverse tasks and
+LLM architectures on HiF4 and NVFP4 formats.
+A. Post-Training Quantization for LLMs
+To demonstrate the inherent precision of the 4-bit formats,
+we prioritize using HiF4 direct-cast, NVFP4 direct-cast, and
+the NVFP4 + PTS approach for LLM inference, as described
+in Section III. Meanwhile, to show that many existing PTQ
+methods can be adapted to enhance HiF4 accuracy with minor
+changes, we developed a tailored PTQ method based on the
+vanilla GPTQ [19], termed HiGPTQ, to exploit the fine-grained
+structure of the HiF4 BFP format.
+B. Experiments on Small LLMs
+We begin by evaluating our method on relatively smaller
+LLMs with the parameter size ranging from 7B to 14B. Detailed
+results and the corresponding inference accuracy degradation,
+denoted as Acc Drop, across eight benchmarks are presented
+in Table III. To provide an overall view of quantization errors,
+5
+
+===== PAGE 6 =====
+TABLE III: Experimental Results of 4 Small LLMs Evaluated across 8 Benchmarks
+Model A-W Quant Type ARC-C ARC-E BoolQ HellaS LamOp Piqa WinoG MMLU Mean
+Llama2-7B
+BF16 45.65 74.41 77.74 75.99 73.67 79.11 69.06 46.52 67.77
+NVFP4 44.54 73.32 76.02 75.02 73.69 77.37 70.48 41.51 66.49
+— Acc Drop -1.11 -1.09 -1.72 -0.97 +0.02 -1.74 +1.42 -5.01 -1.28
+NVFP4+PTS 44.62 72.01 76.67 74.92 73.16 77.91 66.69 43.43 66.18
+— Acc Drop -1.03 -2.40 -1.07 -1.07 -0.51 -1.20 -2.37 -3.09 -1.59
+HiF4 44.63 74.08 76.73 75.00 72.65 78.40 68.39 44.54 66.80
+— Acc Drop -1.02 -0.33 -1.01 -0.99 -1.02 -0.71 -0.67 -1.98 -0.97
+HiF4+HiGPTQ 45.31 73.61 76.58 74.91 73.66 77.86 68.99 43.89 66.85
+— Acc Drop -0.34 -0.80 -1.16 -1.08 -0.01 -1.25 -0.07 -2.63 -0.92
+LLama3-8B
+BF16 53.41 77.78 81.16 79.15 75.65 80.85 72.93 66.55 73.44
+NVFP4 48.04 73.74 78.35 76.56 74.21 78.56 71.43 61.64 70.32
+— Acc Drop -5.37 -4.04 -2.81 -2.59 -1.44 -2.29 -1.50 -4.91 -3.12
+NVFP4+PTS 49.74 74.54 77.46 77.60 74.85 79.76 70.80 62.81 70.95
+— Acc Drop -3.67 -3.24 -3.70 -1.55 -0.80 -1.09 -2.13 -3.74 -2.49
+HiF4 51.15 76.73 79.85 77.84 73.76 79.09 71.79 63.37 71.70
+— Acc Drop -2.26 -1.05 -1.31 -1.31 -1.89 -1.76 -1.14 -3.18 -1.74
+HiF4+HiGPTQ 52.18 77.46 80.40 77.47 72.85 79.60 71.87 63.55 71.92
+— Acc Drop -1.23 -0.32 -0.76 -1.68 -2.80 -1.25 -1.06 -3.00 -1.52
+Qwen2.5-14B
+BF16 58.96 79.34 85.54 82.94 74.31 81.88 74.74 80.17 77.24
+NVFP4 58.53 80.56 83.49 81.38 72.95 81.72 74.43 76.53 76.20
+— Acc Drop -0.43 +1.22 -2.05 -1.56 -1.36 -0.16 -0.31 -3.64 -1.04
+NVFP4+PTS 56.57 80.18 85.72 81.45 72.87 81.66 73.16 78.63 76.28
+— Acc Drop -2.39 +0.84 +0.18 -1.49 -1.44 -0.22 -1.58 -1.54 -0.96
+HiF4 58.66 81.55 85.86 81.45 72.74 81.29 73.72 78.62 76.74
+— Acc Drop -0.30 +2.21 +0.32 -1.49 -1.57 -0.59 -1.02 -1.55 -0.50
+HiF4+HiGPTQ 60.71 83.04 86.27 81.38 73.02 81.67 75.06 78.65 77.48
+— Acc Drop +1.75 +3.70 +0.73 -1.56 -1.29 -0.21 +0.32 -1.52 +0.24
+Mistral-7B
+BF16 52.39 78.37 82.17 80.50 75.14 82.21 74.11 63.30 73.52
+NVFP4 28.41 26.30 56.09 26.69 0.0 48.69 48.30 26.79 32.66
+— Acc Drop -23.98 -52.07 -26.08 -53.81 -75.14 -33.52 -25.81 -36.51 -40.87
+NVFP4+PTS 50.77 77.19 80.86 79.71 73.96 80.85 72.45 61.15 72.12
+— Acc Drop -1.62 -1.18 -1.31 -0.79 -1.18 -1.36 -1.66 -2.15 -1.41
+HiF4 51.41 76.85 81.35 79.41 74.11 81.01 72.06 61.63 72.23
+— Acc Drop -0.98 -1.52 -0.82 -1.09 -1.03 -1.20 -2.05 -1.67 -1.29
+HiF4+HiGPTQ 51.84 77.74 82.22 79.48 73.31 81.91 73.40 61.53 72.68
+— Acc Drop -0.55 -0.63 +0.05 -1.02 -1.83 -0.30 -0.71 -1.77 -0.84
+Table IV reports the average inference accuracy across all
+evaluated models (w/ and w/o the crashed Mistral-7B) for
+NVFP4, NVFP4+PTS, HiF4, and HiF4+HiGPTQ.
+Models:We evaluate 4-bit quantization accuracy across a
+diverse collection of LLM architectures and model scales,
+including LLaMA2-7B [20], LLaMA3-8B [21], Qwen2.5-
+14B [22], and Mistral-7B [23]. These models cover a broad
+range of architectural designs, including Multi-Head Attention
+(MHA) [24] and Grouped-Query Attention (GQA) [25], as
+well as multiple forms of Feed-Forward Networks (FFNs) [26].
+TABLE IV: Average Inference Accuracy for Small LLMs
+# LLM Models BF16 NVFP4 NVFP4+
+PTS HiF4 HiF4+
+HiGPTQ
+4 (w/ Mistral-7B) 72.99 61.42 71.3871.8772.23
+— Acc Drop - Crash -1.61 -1.12 -0.76
+3(w/o Mistral-7B) 72.82 71.01 71.1471.7572.08
+— Acc Drop - -1.81 -1.68 -1.07 -0.74
+Datasets:We use a suite of widely adopted LLM benchmarks,
+including ARC-C(hallenge), ARC-E(asy) [27], BoolQ [28],
+HellaS(wag) [29], Lam(bada)Op(enAI) [30], Piqa [31],
+WinoG(rande) [32], and MMLU [33]. Together, these bench-
+marks span a broad spectrum of tasks, including common-
+sense and physical reasoning, cloze-style completion, pro-
+noun/coreference resolution, fact verification, and multi-domain
+knowledge assessment.
+Implementation Details:Experiments in this section are all
+conducted using simulated 4-bit BFP formats based on Nvidia
+GPU and Huawei Ascend NPU. Specifically, before matrix
+multiplication, all linear layer tensors (with the exception of
+the embedding and LLM head layers) were converted from
+high-precision formats only to those that could be represented
+in HiF4 and NVFP4 formats. All experiments reported in this
+sub-section were conducted in parallel on two devices. For each
+device, we performed three runs using different random seeds.
+The final results are the average inference accuracy across the
+three runs and both devices to ensure that random variance is
+minimized. For a fair comparison, we evaluate all models and
+quantization settings within a unified framework, in which all
+experiments on a given benchmark employ the same prompt
+template for LLM inference.
+Experimental Results and Analysis:As shown in Tables III
+6
+
+===== PAGE 7 =====
+TABLE V: Experimental Results of DeepSeek-V3.1 and LongCat Evaluated across 10 Benchmarks
+Model A-W Quant Type ARC-C ARC-E BoolQ HellaS Piqa WinoG Gsm8K MMLU Math500 CMMLU Mean
+DeepSeek-V3.1
+671B
+BF16 79.91 84.44 79.76 84.41 92.93 89.34 94.46 84.86 75.00 89.28 85.44
+NVFP4 82.83 86.85 76.91 81.18 91.29 87.92 95.00 84.31 74.00 87.76 84.81
+— Acc Drop +2.92 +2.41 -2.85 -3.23 -1.64 -1.42 +0.54 -0.55 -1.00 -1.52 -0.63
+NVFP4+PTS 81.55 87.06 77.83 81.00 91.29 88.00 95.30 84.72 78.20 87.44 85.24
+— Acc Drop +1.64 +2.62 -1.93 -3.41 -1.64 -1.34 +0.84 -0.14 +3.20 -1.84 -0.20
+HiF4 80.86 86.89 78.87 86.60 92.44 89.11 95.75 84.77 80.20 88.71 86.42
+— Acc Drop +0.95 +2.45 -0.89 +2.19 -0.49 -0.23 +1.29 -0.09 +5.20 -0.57 +0.98
+LongCat
+560B
+BF16 84.38 86.64 66.85 82.09 91.46 80.27 95.91 59.19 84.80 81.65 81.32
+NVFP4 84.72 88.50 62.78 84.42 89.39 79.24 96.29 38.81 78.60 72.12 77.49
+— Acc Drop +0.34 +1.86 -4.07 +2.33 -2.07 -1.03 +0.38 -20.38 -6.20 -9.53 -3.84
+NVFP4+PTS 87.04 89.26 63.55 84.17 89.83 79.40 95.45 39.00 78.20 72.24 77.81
+— Acc Drop +2.66 +2.62 -3.30 +2.08 -1.63 -0.87 -0.46 -20.19 -6.60 -9.41 -3.51
+HiF4 84.98 87.95 71.19 84.04 91.19 79.56 95.75 58.03 82.60 82.74 81.80
+— Acc Drop +0.60 +1.31 +4.34 +1.95 -0.27 -0.71 -0.16 -1.16 -2.20 +1.09 +0.48
+and IV, HiF4 (direct-cast) consistently outperforms the prior
+state-of-the-art NVFP4 (direct-cast) and NVFP4+PTS across all
+four evaluated LLM models, demonstrating that the proposed
+HiF4 constitutes a more accurate 4-bit BFP format. We further
+observe that HiF4 is substantially more robust than NVFP4
+under direct conversion, attributable to its larger global and
+suitable local dynamic ranges. For instance, Mistral-7B exhibits
+a broader numerical distribution, under which direct-cast
+inference with NVFP4 results in model failure and accuracy
+degradation to near random-guess levels,i.e., inference crash.
+In contrast, HiF4 enables stable direct-cast inference under
+the same conditions. In addition, HiGPTQ further improves
+the inference accuracy of HiF4 across all four evaluated
+models. Notably, for the Qwen2.5-14B model, whose numerical
+distributions are optimized during training, the combination of
+HiF4 and HiGPTQ even surpasses the BF16 baseline.
+In summary, the proposed HiF4 format demonstrates higher
+inherent precision and stability than NVFP4. Many mature
+PTQ methods, such as GPTQ, can be adapted with minor
+modifications to further enhance the accuracy of HiF4.
+C. Experiments on DeepSeek-V3.1 and LongCat
+Models:We further evaluate 4-bit inference accuracy on larger
+LLMs, DeepSeek-V3.1 (671B) [34] and LongCat (560B) [35].
+These two models further encompass Multi-Head Latent
+Attention (MLA) and Mixture-of-Experts (MoE) architectures,
+which are commonly used in latest state-of-the-art LLMs.
+Datasets:In addition to the benchmarks mentioned above,
+our evaluation suite extends to several high-stakes domains,
+specifically Gsm8K [36], Math500 [37] and CMMLU [38] to
+ensure a holistic assessment of the model’s capabilities.
+Implementation Details:We deployed the LongCat and
+DeepSeek-V3.1 models using the vLLM framework on clusters
+of 32 and 64 Ascend 910B NPUs, respectively, distributed
+across 4 and 8 nodes. To ensure a standardized accuracy
+assessment, the AISBench framework was employed for
+evaluation. All experiments were completed within a practical
+timeframe. For 4-bit evaluation, we converted the tensors in
+the MLA_linear, MoE_linear (excluding the gating network),
+and FFN_linear layers to HiF4 and NVFP4 formats.
+Experimental Results and Analysis:Results in Table V
+demonstrate that HiF4 (direct-cast) consistently surpasses
+the state-of-the-art NVFP4 format in 4-bit inference accu-
+racy, including NVFP4 (direct-cast) and NVFP4+PTS. The
+superiority of HiF4 stems from its novel structure design
+as depicted in Figure 2, and more balanced features as
+outlined in Table II, which provide greater robustness for deep
+learning. For instance, HiF4 successfully handles the relatively
+quantization-sensitive LLM LongCat, where NVFP4 fails and
+leads to accuracy crashes in some hard tasks. Furthermore, in
+specialized cases like the DeepSeek-V3.1 model, the inherent
+design of HiF4 allows it to rival the BF16 baseline, highlighting
+its effectiveness as a high-fidelity 4-bit BFP format.
+V. CONCLUSION
+In this paper, we proposed a novel 4-bit BFP format, HiF4,
+for deep learning. Behind the design of HiF4, we first argue
+that E1M2 (S1P2) with 3-bit significand offers higher precision
+ceiling than E2M1 with 2-bit significand in the 4-bit BFP format
+design. Then, we successfully identified that increasing group
+size to 64 and employing two-level shared micro-exponents
+with a metadata overhead of 0.5-bit per value offers a new
+trade-off among overall accuracy, quantization complexity, and
+hardware efficiency. Additionally, we meticulously designed a
+dedicated global base scale that delivers sufficient inter-group
+dynamic range capable of directly supporting both training and
+inference scenarios, while enhancing the utilization of available
+intra-group dynamic range.
+Numerical analysis shows that, compared to the state-of-the-
+art NVFP4 format, HiF4 reduces the MSE quantization error by
+24% on Gaussian-distributed data. When 64-length dot product
+is integrated into existing hardware dot-product units originally
+optimized for 16-bit (FP16/BF16) and 8-bit (INT8/Float8)
+precision, HiF4 occupies only approximately one-third of the
+incremental area of NVFP4 and reduces power consumption
+by about 10%. Finally, we conducted extensive LLM inference
+experiments, demonstrating that HiF4 consistently achieves
+higher accuracy than NVFP4 across various LLM architectures
+and diverse tasks. Future work will present the training potential
+of the proposed HiF4 format.
+7
+
+===== PAGE 8 =====
+REFERENCES
+[1] H. Naveed, A. U. Khan, S. Qiu, M. Saqib, S. Anwar, M. Usman,
+N. Akhtar, N. Barnes, and A. Mian, “A comprehensive overview of
+large language models,”ACM Transactions on Intelligent Systems and
+Technology, vol. 16, no. 5, pp. 1–72, 2025.
+[2] A. Gholami, Z. Yao, S. Kim, C. Hooper, M. W. Mahoney, and K. Keutzer,
+“Ai and memory wall,”IEEE Micro, vol. 44, no. 3, pp. 33–39, 2024.
+[3] Nvidia, “Nvidia h100 tensor core gpu architecture,”
+https://resources.nvidia.com/en-us-hopper-architecture/nvidia-h100-
+tensor-c, 2022.
+[4] X. Eric, “Groundbreaking superpod interconnect: Leading a
+new paradigm for ai infrastructure,”Huawei Connect 2025,
+https://www.huawei.com/en/news/2025/9/hc-xu-keynote-speech, 2025.
+[5] Y . Luo, Z. Zhang, R. Wu, H. Liu, Y . Jin, K. Zheng, M. Wang, Z. He,
+G. Hu, L. Chenet al., “Ascend hifloat8 format for deep learning,”arXiv
+preprint arXiv:2409.16626, 2024.
+[6] Nvidia, “Nvidia blackwell architecture technical brief,”
+https://resources.nvidia.com/en-us-blackwell-architecture/blackwell-
+architecture-technical-brief, 2025.
+[7] AMD, “Amd instinct mi350x gpu brochure,”
+https://www.amd.com/content/dam/amd/en/documents/instinct-tech-
+docs/product-briefs/amd-instinct-mi350x-gpu-brochure.pdf, 2025.
+[8] B. Darvish Rouhani, R. Zhao, V . Elango, R. Shafipour, M. Hall,
+M. Mesmakhosroshahi, A. More, L. Melnick, M. Golub, G. Varatkar
+et al., “With shared microexponents, a little shifting goes a long way,” in
+Proceedings of the 50th Annual International Symposium on Computer
+Architecture, 2023, pp. 1–13.
+[9] B. Darvish Rouhani, D. Lo, R. Zhao, M. Liu, J. Fowers, K. Ovtcharov,
+A. Vinogradsky, S. Massengill, L. Yang, R. Bittneret al., “Pushing the
+limits of narrow precision inferencing at cloud scale with microsoft
+floating point,”Advances in neural information processing systems,
+vol. 33, pp. 10 271–10 281, 2020.
+[10] AMD, “Versal ai edge series gen2 product brief,”
+https://www.amd.com/content/dam/amd/en/documents/products/adaptive-
+socs-and-fpgas/versal/versal-ai-edge-gen2-product-brief.pdf, 2024.
+[11] B. D. Rouhani, N. Garegrat, T. Savell, A. More, K.-N. Han, R. Zhao,
+M. Hallet al., “Ocp microscaling (mx) specification,”Open Compute
+Project, 2023.
+[12] P. Micikevicius, “Blackwell numerics for ai,”https://www.nvidia.com/en-
+us/on-demand/session/gtc25-s72458/, 2025.
+[13] B. D. Rouhani, R. Zhao, A. More, M. Hall, A. Khodamoradi, S. Deng,
+D. Choudhary, M. Cornea, E. Dellinger, K. Denolfet al., “Microscaling
+data formats for deep learning,”arXiv preprint arXiv:2310.10537, 2023.
+[14] S. Agarwal, L. Ahmad, J. Ai, S. Altman, A. Applebaum, E. Arbus, R. K.
+Arora, Y . Bai, B. Baker, H. Baoet al., “gpt-oss-120b & gpt-oss-20b
+model card,”arXiv preprint arXiv:2508.10925, 2025.
+[15] E. Alvarez, O. Almog, E. Chung, S. Layton, D. Stosic, R. Krashinsky,
+and K. Aubrey, “Introducing nvfp4 for efficient and accurate low-
+precision inference,”https://developer.nvidia.com/blog/introducing-nvfp4-
+for-efficient-and-accurate-low-precision-inference/, 2025.
+[16] F. Abecassis, A. Agrusa, D. Ahn, J. Alben, S. Alborghetti, M. Andersch,
+S. Arayandi, A. Bjorlin, A. Blakeman, E. Brioneset al., “Pretraining
+large language models with nvfp4,”arXiv preprint arXiv:2509.25149,
+2025.
+[17] Nvidia, “Nvidia tesla v100 gpu architecture,”
+https://images.nvidia.com/content/volta-architecture/pdf/volta-
+architecture-whitepaper.pdf, 2017.
+[18] H. Liao, J. Tu, J. Xia, and X. Zhou, “Davinci: A scalable architecture
+for neural network computing,” in2019 IEEE Hot Chips 31 Symposium
+(HCS). IEEE Computer Society, 2019, pp. 1–44.
+[19] E. Frantar, S. Ashkboos, T. Hoefler, and D. Alistarh, “GPTQ: Accurate
+post-training compression for generative pretrained transformers,” in
+Proceedings of the International Conference on Learning Representations
+(ICLR), 2023.
+[20] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y . Babaei,
+N. Bashlykov, S. Batra, P. Bhargava, S. Bhosaleet al., “Llama 2: Open
+foundation and fine-tuned chat models,”arXiv preprint arXiv:2307.09288,
+2023.
+[21] A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman,
+A. Mathur, A. Schelten, A. Yang, A. Fanet al., “The llama 3 herd of
+models,”arXiv e-prints, pp. arXiv–2407, 2024.
+[22] A. Yang, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Li, D. Liu,
+F. Huanget al., “Qwen2.5 technical report,” 2025. [Online]. Available:
+https://arxiv.org/abs/2412.15115
+[23] A. Q. Jiang, A. Sablayrolles, A. Mensch, C. Bamfordet al., “Mistral
+7b,” 2023. [Online]. Available: https://arxiv.org/abs/2310.06825
+[24] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+Ł. Kaiser, and I. Polosukhin, “Attention is all you need,”Advances in
+neural information processing systems, vol. 30, 2017.
+[25] J. Ainslie, J. Lee-Thorp, M. De Jong, Y . Zemlyanskiy, F. Lebrón, and
+S. Sanghai, “Gqa: Training generalized multi-query transformer models
+from multi-head checkpoints,”arXiv preprint arXiv:2305.13245, 2023.
+[26] N. Shazeer, “Glu variants improve transformer,”arXiv preprint
+arXiv:2002.05202, 2020.
+[27] P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick,
+and O. Tafjord, “Think you have solved question answering? try arc, the
+ai2 reasoning challenge,”arXiv:1803.05457, 2018.
+[28] C. Clark, K. Lee, M.-W. Chang, T. Kwiatkowski, M. Collins, and
+K. Toutanova, “Boolq: Exploring the surprising difficulty of natural
+yes/no questions,” inProceedings of the 2019 Conference of the North
+American Chapter of the Association for Computational Linguistics:
+Human Language Technologies (NAACL-HLT ’19). Minneapolis, MN,
+USA: Association for Computational Linguistics, 2019, p. 2924–2936.
+[29] R. Zellers, A. Holtzman, Y . Bisk, A. Farhadi, and Y . Choi, “Hellaswag:
+Can a machine really finish your sentence?” inProceedings of the 57th
+Annual Meeting of the Association for Computational Linguistics (ACL).
+Florence, Italy: Association for Computational Linguistics, 2019, pp.
+4791–4800.
+[30] D. Paperno, G. Kruszewski, A. Lazaridou, N. Q. Pham, R. Bernardi,
+S. Pezzelle, M. Baroni, G. Boleda, and R. Fernández, “The LAMBADA
+dataset: Word prediction requiring a broad discourse context,” inProceed-
+ings of the 54th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers). Berlin, Germany: Association for
+Computational Linguistics, 2016, pp. 1525–1534.
+[31] Y . Bisk, R. Zellers, R. L. Bras, J. Gao, and Y . Choi, “Piqa: Reasoning
+about physical commonsense in natural language,” inThirty-Fourth AAAI
+Conference on Artificial Intelligence (AAAI ’20), 2020, pp. 7432–7439.
+[32] K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y . Choi, “Winogrande:
+An adversarial winograd schema challenge at scale,”arXiv preprint
+arXiv:1907.10641, 2019.
+[33] D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and
+J. Steinhardt, “Measuring massive multitask language understanding,” in
+Proceedings of the International Conference on Learning Representations
+(ICLR) 2021, 2021.
+[34] A. Liu, B. Feng, B. Xue, B. Wang, B. Wu, C. Lu, C. Zhao, C. Deng,
+C. Zhang, C. Ruanet al., “Deepseek-v3 technical report,”arXiv preprint
+arXiv:2412.19437, 2024.
+[35] M. L. Team, B. Li, B. Lei, B. Wang, B. Rong, C. Wang, C. Zhang,
+C. Gao, C. Zhang, C. Sunet al., “Longcat-flash technical report,”arXiv
+preprint arXiv:2509.01322, 2025.
+[36] K. Cobbe, V . Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser,
+M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schul-
+man, “Training verifiers to solve math word problems,”arXiv preprint
+arXiv:2110.14168, 2021.
+[37] D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang,
+D. Song, and J. Steinhardt, “Measuring mathematical problem solving
+with the math dataset,” inNeurIPS, 2021.
+[38] H. Li, Y . Zhang, F. Koto, Y . Yang, H. Zhao, Y . Gong, N. Duan,
+and T. Baldwin, “Cmmlu: Measuring massive multitask language
+understanding in chinese,” 2024. [Online]. Available: https://arxiv.org/
+abs/2306.09212
+8
