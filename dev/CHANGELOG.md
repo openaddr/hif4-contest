@@ -74,3 +74,4 @@
 - artifact: dist/solution_v15.zip
 
 - note (v15 rev2, pre-upload): T-adaptive act sweeps (<=512: 6, <=1024: 3, else 0; caps per-call cost ~0.7s local, worst-case timeout risk removed) and weight sweeps 3->1 (hold-out curve flat). diag3 +7.2508->+7.2413, linear cal 9.61->7.5s, dyn 0.85->0.68s/call. Online est ~275s night
+- note: v14 online 20779 @258s (+596 vs v10!). Mini predicted only +0.0105pp/+70-100 — the damping change (0.01->0.05) paid 6-8x more on judge data. Interpretation: judge Hessians are far more strongly conditioned (strong-structure paradigm again); their optimal damping sits right of mini's. Mini damp curve plateau 0.05-0.075, declines by 0.2 — judge's curve likely shifted right: damp 0.1 test is a queued candidate. v15 (lattice refinement, mini linear +1.67pp) pending online
