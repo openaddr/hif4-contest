@@ -139,3 +139,8 @@
 ## v18 - 2026-08-22
 - sweep/round curve measured locally: saturated (5/20 +7.2062 -> 8/32 +7.2212, i.e. +0.015pp ~= +25 online max) -- small-T depth is done
 - v18 = v17 + GPTQ_DAMP 0.1 (single variable). Mini IMPROVED +7.2062->+7.2207 (refinement shifted the local optimum right too). Remaining pots ranked: T=1024 cases ~+1100 @ +13s (timeout risk at 286s base), C=4096 bf16 grams (envelope 48-192MiB unknown, needs half-probe), attn-side refinement (250 cases, unexplored, build required), timing audit to fund T=1024
+
+## ATTRIBUTION CORRECTION - 2026-08-22
+- 23662 @286s belongs to v16 (bf16 grams, C<=2048, T<=1024, sweeps 5/2), NOT v17. The earlier "timeout" was v16's FIRST attempt; the SAME zip passed at 286s on retry -> same-artifact judge timing swing >=15s (congestion variance is real and large)
+- v17 (T<=512, sweeps 5) is IN FLIGHT. Its readout vs 23662 = X, the online value of R=1024@2-sweep refinement (100 linear cases). Prediction: X ~ 500-800 (2 sweeps ~60% of 5-sweep value, 6.9x transfer) -> v17 ~ 22850-23150. If X < 250, the R=1024 pot is small and v18 (v17+damp0.1, already built) is the right next submit; if X >= 400, mainline stays on the v16 config and v18 gets rebuilt as v16+damp0.1 (same runtime class as the 286s/retry-timeout artifact -> only at lowest-load window, or after the timing audit frees >=10s)
+- timing-audit agent still running in background; its savings now target "v16 config + margin"
