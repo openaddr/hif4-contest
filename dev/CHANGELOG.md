@@ -104,3 +104,13 @@
 - the "identical score/time" submission was solution_v15.zip (rev4) RE-UPLOADED by mistake, not probe_cband. No probe has ever been submitted. The identity is trivial (same code, deterministic judge) and is a free determinism datapoint (rev4 twice: 18205/283s exactly). All inferences drawn from "cband identity" are retracted (band-empty / refinement-dead-online chains both unproven)
 - standing evidence (unchanged): failing 6 groups are C<=4096 refined+carried; S1 carry (128MiB@4096) vs S2 refinement math both alive
 - NEXT: submit dist/probe_carry3.zip (hash 3-way carry-vs-refine, supersedes probe_cband: per-group attribution independent of the failing groups' unknown C). decode: fail in buckets 1+2 -> carry guilty (v16: bf16 Grams or drop); fail only bucket 2 -> math guilty (v16: drop/guard); attn untouched
+## v16 - 2026-08-21 00:28:17
+- artifact: dist/solution_v16.zip
+- note: carry3 verdict: fp32 Gram CARRY breaks judge groups (4/6 failed in carry buckets, 2 in v14-bucket passed, no new failures; all-4-in-bucket2 alt only 8%). v16: Grams stored bf16 (half bytes, dynamic side upcasts to fp32; diag3 +7.2263->+7.2235, -0.0028pp) and REFINE_MAX_C 4096->2048 (total state <=48MiB, inside v14-proven envelope; C=2048 state=32MiB measured). Fallback ladder if still WA: envelope <48MiB or math guilty -> drop refinement / one more probe
+
+
+## carry3 readout + v16 - 2026-08-21
+- carry3 online: 17967 @237s, linear WA = 20-24, 45-49, 85-89, 115-119 (4 of the original 6; 65-69 and 100-104 PASSED; zero new failures)
+- VERDICT: carry guilty (~90%). The 2 passing groups landed bucket 0 (v14 exact, guaranteed pass); the 4 failing are in carry buckets. Alternative (math guilty) requires all 4 failing in bucket 2: multinomial P ~8%. No new failures => carrying did not break any previously-passing group (the 6 are plausibly ALL the big-C groups). Score consistent with ~4 high-value groups zeroed
+- v16 = rev4 + Grams stored bf16 (judge-legal dtype; dynamic upcasts to fp32, diag3 +7.2235 vs +7.2263 = -0.0028pp essentially free) + REFINE_MAX_C 4096->2048 (C=2048 measured total state 32MiB incl u_act; worst 48MiB < v14-proven 64MiB). C>2048 = bit-identical v14. self_check 22/22, sweeps 5/2 unchanged
+- v16 decode: all pass -> stable base + small-C refinement (~20800-21000); same 4 fail -> envelope <48MiB OR math guilty (the 8% branch) -> drop refinement, re-base on v14, next single-variable damp=0.1

@@ -12,13 +12,12 @@ Pipeline per tensor:
      (block-diagonal Hadamard rotation for Linear, per-head rotation for
      Q/K), then hold-out-guarded GPTQ on weights and activations.
   5. Lattice refinement (Linear only): coordinate-descent mantissa flips on
-     the value grid with an exact incremental output-MSE objective. Weights
-     are refined at calibration (calib[:-1] fit, calib[-1] hold-out guard);
-     activations are refined online against Gw = q_used^T q_used and
-     Gwf = w_final^T q_used carried in the state. Greedy top-1 only -- the
-     flip-all variant diverges. Both stages are gated to C <= REFINE_MAX_C:
-     the two C x C fp32 Grams are 2*C^2*4 bytes of state, and the judge only
-     tolerates the v14 state envelope above that cap.
+     the value grid with an exact incremental output-MSE objective.
+     Activations are refined online against Gw = q_used^T q_used and
+     Gwf = w_final^T q_used carried in the state as bf16 (fp32-Gram-sized
+     states WA'd whole groups on the judge). Greedy top-1 only -- the
+     flip-all variant diverges. Gated to C <= REFINE_MAX_C so the total
+     state stays inside the v14 envelope.
 
 Rows are processed in chunks to bound peak memory.
 """
@@ -167,13 +166,13 @@ REFINE_ACT_SWEEPS = 6       # activation sweeps (3 sweeps = +1.2pp, 6 = +1.8pp)
 REFINE_W_SWEEPS = 1         # weight sweeps (hold-out curve flat after sweep 1)
 REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
 REFINE_T_MAX = 1024         # activation rows; skip act refinement above this
-REFINE_MAX_C = 4096         # channel cap for the whole lattice stage; the two
-                            # C x C fp32 Grams put 2*C^2*4 bytes into the
-                            # activation_state (plus the judge's per-call state
-                            # clone doubling it). v15 carried them at every C
-                            # and the judge WA'd whole large-C groups (512 MiB+
-                            # states); above this cap the pipeline must stay in
-                            # the proven v14 state/memory envelope (u_act only).
+REFINE_MAX_C = 2048         # channel cap for the whole lattice stage. carry3
+                            # probe verdict: carrying two C x C fp32 Grams
+                            # (128 MiB @C=4096) made whole judge groups WA
+                            # while v14 (u_act only, 64 MiB) passed. Grams are
+                            # stored bf16 (half the bytes) and capped so the
+                            # whole state (bf16 Grams + fp32 u_act <= 48 MiB)
+                            # stays inside the proven v14 envelope.
 REFINE_W_ROWS = 2048        # calib rows feeding the weight objective
 REFINE_W_HOLD_ROWS = 1024   # hold-out rows for the weight guard
 REFINE_W_CHUNK = 2048       # weight-row chunk for the greedy sweep
@@ -636,8 +635,9 @@ def hif4_calibration_and_quantize_weight(
             # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
             # in the transformed space (post s/mode; the dynamic x lives there)
             # (weight-side refinement dropped: +0.12pp mini for ~20s online)
-            gw = (q_used.T @ q_used).contiguous()
-            gwf = (w_final.T @ q_used).contiguous()
+            # bf16 storage: the fp32 carry WA'd whole groups on the judge
+            gw = (q_used.T @ q_used).to(torch.bfloat16)
+            gwf = (w_final.T @ q_used).to(torch.bfloat16)
         except Exception:
             gw = gwf = None
 
@@ -700,7 +700,7 @@ def hif4_dynamic_quantize_activation(
                 and tuple(gw.shape) == (C, C) and tuple(gwf.shape) == (C, C)):
             try:
                 v0 = values if values is not None else _deq_params(p)
-                v1 = _refine_act_values(x, v0, unit, gw, gwf)
+                v1 = _refine_act_values(x, v0, unit, gw.float(), gwf.float())
                 return _values_to_params(v1.contiguous(), p)
             except Exception:
                 pass
