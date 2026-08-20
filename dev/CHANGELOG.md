@@ -79,3 +79,10 @@
 - artifact: dist/solution_v15.zip
 - note: v15 rev3: online WA root cause = Gram STATE SIZE, not param legality. gw/gwf add 2*C^2*4B to activation_state (432MiB @C=6144, 768MiB @C=8192, 3GiB @C=16384) which the judge clones per online call; v14 passed with at most one C^2 fp32 (u_act). Local stress (dev/stress.py, 16 shapes incl. C=16384/T=2048/spikes/flat/g=0/mode=0): ALL pass official validation even with 3GiB states -> params/state formally legal everywhere; failures are judge-side memory/transfer of huge states. Fix: REFINE_MAX_C=4096 gates weight refine + Gram carry; C>4096 bit-identical to v14 (state 768->256MiB @8192, dyn 5.7->3.7s, stress check 63->43s). Verified: diag3 +7.2413 (=v15 rev2), mini 22/22, stress recheck 6/6 PASS
 
+## v15 - 2026-08-20 22:17:54
+- artifact: dist/solution_v15.zip
+
+## v15 - 2026-08-20 22:19:23
+- artifact: dist/solution_v15.zip
+
+- note: v15 rev3 (C-gate) TIMED OUT online (0). rev3 work is strictly a subset of rev2 (which ran 272s) -> cause is judge load variability, 272s left only 9% margin. rev4: dropped E3 weight refinement (+0.12pp for ~20s online), act sweeps 6/3->5/2 -> local linear cal 6.95->4.98s, dyn 0.66->0.59s/call; diag3 +7.2413->+7.2263 (acceptable cost). Online est ~225-240s (25% margin). Resubmit at night

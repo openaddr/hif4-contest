@@ -309,7 +309,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     M = (v4 * d) @ gw - x @ gwf
     # T-adaptive sweep depth: cap per-call cost (T=1024 -> 3 sweeps ~0.7s local)
     T = values.shape[0]
-    n_sweeps = REFINE_ACT_SWEEPS if T <= 512 else 3 if T <= 1024 else 0
+    n_sweeps = 5 if T <= 512 else 2 if T <= 1024 else 0
     for _ in range(n_sweeps):
         for _ in range(REFINE_ROUNDS):
             g, dirn = _flip_sel(d, M, col2, v4)
@@ -632,14 +632,10 @@ def hif4_calibration_and_quantize_weight(
     gw = gwf = None
     if C <= REFINE_MAX_C:
         try:
-            weight_params, q_used = _refine_weight_values(
-                w_final, q_used, weight_params, acts_s, tf_final)
-        except Exception:
-            pass
-        try:
             # activation refinement targets the exact output error, so the
             # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
             # in the transformed space (post s/mode; the dynamic x lives there)
+            # (weight-side refinement dropped: +0.12pp mini for ~20s online)
             gw = (q_used.T @ q_used).contiguous()
             gwf = (w_final.T @ q_used).contiguous()
         except Exception:
