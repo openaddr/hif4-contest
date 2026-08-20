@@ -162,7 +162,7 @@ GPTQ_DAMP = 0.05
 # updates). Greedy top-1 per row is exact coordinate descent (rows are
 # independent); flip-all variants diverge and must not be used.
 REFINE_ACT_SWEEPS = 6       # activation sweeps (3 sweeps = +1.2pp, 6 = +1.8pp)
-REFINE_W_SWEEPS = 3         # weight sweeps (hold-out curve flat after sweep 1)
+REFINE_W_SWEEPS = 1         # weight sweeps (hold-out curve flat after sweep 1)
 REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
 REFINE_T_MAX = 1024         # activation rows; skip act refinement above this
 REFINE_W_ROWS = 2048        # calib rows feeding the weight objective
@@ -298,7 +298,10 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     d = 0.25 * unit
     col2 = gw.diagonal()
     M = (v4 * d) @ gw - x @ gwf
-    for _ in range(REFINE_ACT_SWEEPS):
+    # T-adaptive sweep depth: cap per-call cost (T=1024 -> 3 sweeps ~0.7s local)
+    T = values.shape[0]
+    n_sweeps = REFINE_ACT_SWEEPS if T <= 512 else 3 if T <= 1024 else 0
+    for _ in range(n_sweeps):
         for _ in range(REFINE_ROUNDS):
             g, dirn = _flip_sel(d, M, col2, v4)
             idx = g.argmin(dim=1, keepdim=True)

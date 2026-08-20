@@ -67,3 +67,10 @@
 - artifact: dist/solution_v15.zip
 
 - note: lattice refinement (coordinate-descent mant flips with exact incremental output-MSE objective; activation 6 sweeps greedy top-1 via Gram-image residual, weight refinement 3 sweeps with hold-out guard; carries Gw/Gwf in state). diag3 +7.2508 (was +7.1579), linear cal 9.61s dyn 0.85s/call. Linear 5-test mean +0.8421 -> +0.8607 (E1 act refine +1.6pp at 6 sweeps, E3 weight refine +0.12pp, holdout 2.875e-4 -> 2.508e-4 KEEP); 3 sweeps measured only +7.2250 (E1 +1.23pp, matched prototype) -> depth raised to 6 (prototype diag-validated, greedy is monotone); T>1024 skips act refine, all flips keep v4 in [-7,7] (roundtrip rel dev 0.0, mant exact multiples of 0.25 in [0,1.75] verified). T=1024 dyn worst 1.43s/call, time_v9 avg 0.85s. Attention bit-identical to v14 (attn scores and cal/dyn 1.25s/0.70s unchanged)
+## v15 - 2026-08-20 19:39:44
+- artifact: dist/solution_v15.zip
+
+## v15 - 2026-08-20 19:40:54
+- artifact: dist/solution_v15.zip
+
+- note (v15 rev2, pre-upload): T-adaptive act sweeps (<=512: 6, <=1024: 3, else 0; caps per-call cost ~0.7s local, worst-case timeout risk removed) and weight sweeps 3->1 (hold-out curve flat). diag3 +7.2508->+7.2413, linear cal 9.61->7.5s, dyn 0.85->0.68s/call. Online est ~275s night
