@@ -39,3 +39,7 @@
 
 - note (v9 rev2, pre-upload): fixed in-sample guard leak in attention calibration. V-GPTQ guard evaluated on `big` (largest calib sample) while its P-Gram was built INCLUDING that sample -> accepted overfit GPTQ-V that hurt test output MSE by 2.8-17.3% on judge-like random data. All attention guards (rotation, V-GPTQ, Q/K-GPTQ) now evaluate on calib[-1] (true hold-out); Grams/Hessians from calib[:-1] only. Synth attn mean 14.5->21.9, worst -4.9->+14.0. mini +6.65->+6.71; attn dyn 0.91->0.79s/call (V-GPTQ skipped). zip rebuilt before first upload
 - note: 20169.294 @ 289.143s online was the FIRST v9 build (refined ranking, no guard fix). The guard-fixed rev2 zip (current dist/solution_v9.zip, verified) is still untested online; it isolates the V-GPTQ hold-out guard fix vs the 20169 baseline. Time risk: first v9 already at 289/300 -> v10 must cut >=30s regardless of score outcome
+## v10 - 2026-08-20 10:11:19
+- artifact: dist/solution_v10.zip
+
+- note: v10 = v9.2 math (diag3 bit-identical +6.7110) with pure speedups: batched GPTQ (one python column loop for all heads sharing a Hessian — Q dyn was 0.673s/call, 16 heads x 256-col loops; now 0.38s/call total q+k+v), consolidated hold-out guard quantizations (q/k/v quantized once for both guards), V quantization hoisted out of the rotation A/B. Local per-group: attn cal 2.83->1.81s, dyn 0.79->0.38s/call. Online est ~247s (from 274.8). Online history: v9.1 20169@289.1, v9.2 20183@274.8

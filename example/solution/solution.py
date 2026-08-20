@@ -194,6 +194,45 @@ def _gptq_quantize_values(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tenso
     return Q
 
 
+def _gptq_quantize_batched(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
+    """Batched GPTQ over the last axis: x, unit (B, R, n); hinv (n, n) shared by
+    the whole batch or (B, n, n) per element. Mathematically identical to
+    running _gptq_quantize_values per batch element (their columns never
+    interact), but the python column loop runs once for all B elements."""
+    B, R, n = x.shape
+    per_batch = hinv.dim() == 3
+    W = x.clone()
+    Q = torch.empty_like(W)
+    for i1 in range(0, n, GPTQ_BLOCK):
+        i2 = min(i1 + GPTQ_BLOCK, n)
+        W1 = W[..., i1:i2].clone()
+        Q1 = torch.zeros_like(W1)
+        E1 = torch.zeros_like(W1)
+        Hi = hinv[..., i1:i2, i1:i2]
+        u = unit[..., i1:i2]
+        for i in range(i2 - i1):
+            w = W1[..., i]
+            ui = u[..., i]
+            m = (torch.round(w.abs() / ui * 4.0)).clamp_(0.0, 7.0) * 0.25
+            s = torch.where(w >= 0, 1.0, -1.0)
+            q = s * m * ui
+            Q1[..., i] = q
+            d = Hi[..., i, i].clamp_min(1e-30)
+            if per_batch:
+                d = d.unsqueeze(-1)
+            E1[..., i] = (w - q) / d
+            if i < i2 - i1 - 1:
+                seg = Hi[..., i, i + 1:]
+                if per_batch:
+                    seg = seg.unsqueeze(1)
+                W1[..., i + 1:] -= E1[..., i].unsqueeze(-1) * seg
+        Q[..., i1:i2] = Q1
+        if i2 < n:
+            W[..., i2:] -= torch.matmul(E1, hinv[..., i1:i2, i2:])
+            W[..., i1:i2] = W1
+    return Q
+
+
 def _params_unit_flat(p: dict) -> torch.Tensor:
     """Flatten unit = sf*lv2*lv3 to the logical (R, C) shape."""
     R = p["scale_factor"].shape[0]
@@ -549,11 +588,12 @@ def hif4_calibration_attention(
     ones_q = torch.ones(1, qh * dh, dtype=torch.float32)
     ones_k = torch.ones(1, kvh * dh, dtype=torch.float32)
 
+    pv_hold = _quantize_weighted(v, ones_k)   # V is never rotated: quantize once
+
     def run(qt, kt):
         pq = _quantize_weighted(qt, ones_q)
         pk = _quantize_weighted(kt, ones_k)
-        pv = _quantize_weighted(v, ones_k)
-        out = _attention_out(_deq_params(pq), _deq_params(pk), _deq_params(pv), qh, kvh, dh)
+        out = _attention_out(_deq_params(pq), _deq_params(pk), _deq_params(pv_hold), qh, kvh, dh)
         return ((out - ref) ** 2).mean().item()
 
     loss_off = run(q, k)
@@ -601,6 +641,9 @@ def hif4_calibration_attention(
     u_q = None
     u_k = None
     gq = 0
+    gptq_v = 0
+    u_state = None
+    Uq = Uk = None
     if len(calib_qkv_list) >= 2:
         Hq = torch.zeros(kvh, dh, dh)     # for K: sum over group of Q_h^T Q_h
         Hk = torch.zeros(kvh, dh, dh)     # for Q: K_h^T K_h
@@ -621,39 +664,43 @@ def hif4_calibration_attention(
                     Hq[hv] += qv[:, h].T @ qv[:, h]
         Uq = _upper_cholesky_inv(Hk)      # applied to Q
         Uk = _upper_cholesky_inv(Hq)      # applied to K
-        if Uq is not None and Uk is not None:
-            T0 = int(hold["q"][0].shape[0])
-            qf_ = dequantize_nvfp4(*hold["q"]).float()
-            kf_ = dequantize_nvfp4(*hold["k"]).float()
-            vb0 = dequantize_nvfp4(*hold["v"]).float()
-            if rot and R is not None:
-                qf_rot = (qf_.view(T0, qh, dh) @ R).reshape(T0, -1)
-                kf_rot = (kf_.view(T0, kvh, dh) @ R).reshape(T0, -1)
-            else:
-                qf_rot, kf_rot = qf_, kf_
-            pq0 = _quantize_weighted(qf_rot, ones_q)
-            pk0 = _quantize_weighted(kf_rot, ones_k)
-            ref_o = _attention_out(qf_, kf_, vb0, qh, kvh, dh)
-            out_b = _attention_out(_deq_params(pq0), _deq_params(pk0), vb0, qh, kvh, dh)
+
+    T0 = int(hold["q"][0].shape[0])
+    U0 = u_v.get(str(T0)) if u_v else None
+    qk_ready = Uq is not None and Uk is not None
+
+    # ---- shared guard setup: hold sample quantized ONCE for both guards ----
+    if qk_ready or U0 is not None:
+        qf_ = dequantize_nvfp4(*hold["q"]).float()
+        kf_ = dequantize_nvfp4(*hold["k"]).float()
+        vb0 = dequantize_nvfp4(*hold["v"]).float()
+        if rot and R is not None:
+            qf_rot = (qf_.view(T0, qh, dh) @ R).reshape(T0, -1)
+            kf_rot = (kf_.view(T0, kvh, dh) @ R).reshape(T0, -1)
+        else:
+            qf_rot, kf_rot = qf_, kf_
+        pq0 = _quantize_weighted(qf_rot, ones_q)
+        pk0 = _quantize_weighted(kf_rot, ones_k)
+        qh_d = _deq_params(pq0)
+        kh_d = _deq_params(pk0)
+        ref_o = _attention_out(qf_, kf_, vb0, qh, kvh, dh)
+
+        if qk_ready:
+            out_b = _attention_out(qh_d, kh_d, vb0, qh, kvh, dh)
             mse_b = ((out_b - ref_o) ** 2).mean().item()
 
-            def qk_gptq_apply(pq_params, pk_params):
-                u_q_flat = _params_unit_flat(pq_params)
-                u_k_flat = _params_unit_flat(pk_params)
-                qv_flat = qf_rot.clone()
-                kv_flat = kf_rot.clone()
-                for h in range(qh):
-                    hv = h // rep
-                    xs = qf_rot[:, h * dh:(h + 1) * dh]
-                    us = u_q_flat[:, h * dh:(h + 1) * dh]
-                    qv_flat[:, h * dh:(h + 1) * dh] = _gptq_quantize_values(xs, us, Uq[hv])
-                for hv in range(kvh):
-                    xs = kf_rot[:, hv * dh:(hv + 1) * dh]
-                    us = u_k_flat[:, hv * dh:(hv + 1) * dh]
-                    kv_flat[:, hv * dh:(hv + 1) * dh] = _gptq_quantize_values(xs, us, Uk[hv])
-                return qv_flat, kv_flat
+            def qk_gptq_apply():
+                u_q_flat = _params_unit_flat(pq0).view(T0, qh, dh).permute(1, 0, 2).contiguous()
+                u_k_flat = _params_unit_flat(pk0).view(T0, kvh, dh).permute(1, 0, 2).contiguous()
+                qs = qf_rot.view(T0, qh, dh).permute(1, 0, 2).contiguous()
+                ks = kf_rot.view(T0, kvh, dh).permute(1, 0, 2).contiguous()
+                uq_full = Uq[(torch.arange(qh) // rep).clamp_max(Uq.shape[0] - 1)].float()
+                qv_b = _gptq_quantize_batched(qs, u_q_flat, uq_full)
+                kv_b = _gptq_quantize_batched(ks, u_k_flat, Uk.float())
+                return (qv_b.permute(1, 0, 2).reshape(T0, -1),
+                        kv_b.permute(1, 0, 2).reshape(T0, -1))
 
-            qv_flat, kv_flat = qk_gptq_apply(pq0, pk0)
+            qv_flat, kv_flat = qk_gptq_apply()
             out_gq = _attention_out(qv_flat, kv_flat, vb0, qh, kvh, dh)
             mse_gq = ((out_gq - ref_o) ** 2).mean().item()
             if mse_gq < mse_b:
@@ -661,36 +708,16 @@ def hif4_calibration_attention(
                 u_q = Uq.contiguous()
                 u_k = Uk.contiguous()
 
-    # guard on the held-out last calib sample at full length: GPTQ-V vs RTN-V
-    gptq_v = 0
-    u_state = None
-    if u_v:
-        T0 = int(hold["q"][0].shape[0])
-        U0 = u_v.get(str(T0))
+        # guard on the held-out last calib sample: GPTQ-V vs RTN-V
         if U0 is not None:
-            qf_ = dequantize_nvfp4(*hold["q"]).float()
-            kf_ = dequantize_nvfp4(*hold["k"]).float()
-            vb = dequantize_nvfp4(*hold["v"]).float()
-            if rot and R is not None:
-                qf_rot = (qf_.view(T0, qh, dh) @ R).reshape(T0, -1)
-                kf_rot = (kf_.view(T0, kvh, dh) @ R).reshape(T0, -1)
-            else:
-                qf_rot, kf_rot = qf_, kf_
-            pq = _quantize_weighted(qf_rot, ones_q)
-            pk = _quantize_weighted(kf_rot, ones_k)
-            qh_d = _deq_params(pq)
-            kh_d = _deq_params(pk)
-            ref_o = _attention_out(qf_, kf_, vb, qh, kvh, dh)
-            pv = _quantize_weighted(vb, ones_k)
+            pv = _quantize_weighted(vb0, ones_k)
             out_r = _attention_out(qh_d, kh_d, _deq_params(pv), qh, kvh, dh)
             mse_vr = ((out_r - ref_o) ** 2).mean().item()
             unit_v = _params_unit_flat(pv)
-            q_flat = vb.clone()
-            for h in range(kvh):
-                xh = vb[:, h * dh:(h + 1) * dh]
-                uh = unit_v[:, h * dh:(h + 1) * dh]
-                qh_t = _gptq_quantize_values(xh.t().contiguous(), uh.t().contiguous(), U0[h])
-                q_flat[:, h * dh:(h + 1) * dh] = qh_t.t()
+            xs = vb0.view(T0, kvh, dh).permute(1, 2, 0).contiguous()      # (kvh, dh, T)
+            us = unit_v.view(T0, kvh, dh).permute(1, 2, 0).contiguous()
+            qs = _gptq_quantize_batched(xs, us, U0.float())
+            q_flat = qs.permute(2, 0, 1).reshape(T0, -1)
             out_g = _attention_out(qh_d, kh_d, q_flat, qh, kvh, dh)
             mse_vg = ((out_g - ref_o) ** 2).mean().item()
             if mse_vg < mse_vr:
@@ -766,22 +793,17 @@ def _dyn_qk(quant, scale, state, num_heads, head_dim):
             rep_n = num_heads // kvh_n
             T = x.shape[0]
             unit = _params_unit_flat(p)
-            q_flat = x.clone()
-            for h in range(num_heads):
-                hv = h // rep_n
-                if hv >= u.shape[0]:
-                    break
-                xs = x[:, h * head_dim:(h + 1) * head_dim]
-                us = unit[:, h * head_dim:(h + 1) * head_dim]
-                q_flat[:, h * head_dim:(h + 1) * head_dim] = _gptq_quantize_values(
-                    xs, us, u[hv].float())
+            xs = x.view(T, num_heads, head_dim).permute(1, 0, 2).contiguous()
+            us = unit.view(T, num_heads, head_dim).permute(1, 0, 2).contiguous()
+            if num_heads <= u.shape[0]:
+                u_full = u[:num_heads].float()
+            else:
+                hv_of = torch.arange(num_heads) // rep_n
+                u_full = u[hv_of.clamp_max(u.shape[0] - 1)].float()
+            qs = _gptq_quantize_batched(xs, us, u_full)
+            q_flat = qs.permute(1, 0, 2).reshape(T, -1)
             return _values_to_params(q_flat.contiguous(), p)
     return p
-
-
-def _dyn_qk_norot(quant, scale, state):
-    x = dequantize_nvfp4(quant, scale).float()
-    return _dyn_table(x, None, has_scale=False)
 
 
 def _dyn_v(quant, scale, state, kvh, dh):
@@ -793,12 +815,10 @@ def _dyn_v(quant, scale, state, kvh, dh):
         ut = u_map.get(str(T)) if isinstance(u_map, dict) else None
         if isinstance(ut, torch.Tensor) and ut.shape[0] == kvh and ut.shape[1] == T:
             unit = _params_unit_flat(p)
-            q_flat = x.clone()
-            for h in range(kvh):
-                xh = x[:, h * dh:(h + 1) * dh]
-                uh = unit[:, h * dh:(h + 1) * dh]
-                qt = _gptq_quantize_values(xh.t().contiguous(), uh.t().contiguous(), ut[h].float())
-                q_flat[:, h * dh:(h + 1) * dh] = qt.t()
+            xs = x.view(T, kvh, dh).permute(1, 2, 0).contiguous()         # (kvh, dh, T)
+            us = unit.view(T, kvh, dh).permute(1, 2, 0).contiguous()
+            qs = _gptq_quantize_batched(xs, us, ut.float())
+            q_flat = qs.permute(2, 0, 1).reshape(T, -1)
             return _values_to_params(q_flat.contiguous(), p)
     return p
 
