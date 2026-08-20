@@ -828,13 +828,13 @@ def _dyn_v(quant, scale, state, kvh, dh):
     _QKV_CARRY.clear()
     if valid:
         if T <= 512:
-            f = 1.15
+            f = 1.012
         elif T <= 1024:
-            f = 1.30
+            f = 1.024
         elif T <= 2048:
-            f = 1.50
+            f = 1.036
         else:
-            f = 1.80
+            f = 1.048
         return _dyn_table((x / f).contiguous(), state, has_scale=False)
     return _dyn_table(x, state, has_scale=False)
 

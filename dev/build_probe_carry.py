@@ -3,10 +3,10 @@ judge, and the length distribution of valid v-calls.
 
 Replaces the compensation with a bucketed V degradation:
   carry invalid           -> normal V            (score = 20177)
-  carry valid, T<=512     -> V/1.15              (drop D1)
-  carry valid, T<=1024    -> V/1.30              (drop D2)
-  carry valid, T<=2048    -> V/1.50              (drop D3)
-  carry valid, T>2048     -> V/1.80              (drop D4)
+  carry valid, T<=512     -> V/1.012             (drop D1 ~3-5pp/case)
+  carry valid, T<=1024    -> V/1.024             (drop D2 ~14-24pp/case)
+  carry valid, T<=2048    -> V/1.036             (drop D3 ~31-55pp/case)
+  carry valid, T>2048     -> V/1.048             (drop D4 ~55-96pp/case)
 The total drop magnitude decodes the mixture. No budget meter, no T cap.
 """
 import os
@@ -37,13 +37,13 @@ NEW = '''def _dyn_v(quant, scale, state, kvh, dh):
     _QKV_CARRY.clear()
     if valid:
         if T <= 512:
-            f = 1.15
+            f = 1.012
         elif T <= 1024:
-            f = 1.30
+            f = 1.024
         elif T <= 2048:
-            f = 1.50
+            f = 1.036
         else:
-            f = 1.80
+            f = 1.048
         return _dyn_table((x / f).contiguous(), state, has_scale=False)
     return _dyn_table(x, state, has_scale=False)
 
