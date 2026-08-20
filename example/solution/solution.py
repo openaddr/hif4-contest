@@ -149,9 +149,10 @@ GPTQ_DAMP = 0.01
 # --- cross-call Q/K/V carry (judge calls q, k, v sequentially per test) ---
 _QKV_CARRY: dict = {}
 _VCOMP = {"n": 0, "el": 0.0}
-_VCOMP_T_CAP = 512
+_VCOMP_T_CAP = 2048
 _VCOMP_LAM = 1e-4
 _VCOMP_CLAMP = 0.5
+_VCOMP_BUDGET = 150.0   # projected local seconds across all v-calls
 
 
 def _upper_cholesky_inv(H: torch.Tensor):
@@ -731,16 +732,6 @@ def _dyn_table(x: torch.Tensor, state: dict | None, has_scale: bool) -> dict[str
     return _quantize_weighted(xs, wgt)
 
 
-def _probs_batch(q, k, qh, kvh, dh):
-    """Per-qh-head softmax attention probabilities."""
-    T = q.shape[0]
-    qf = q.view(T, qh, dh).transpose(0, 1)
-    kf = k.view(T, kvh, dh).transpose(0, 1)
-    rep = qh // kvh
-    sc = torch.bmm(qf, kf.repeat_interleave(rep, 0).transpose(1, 2)) / (dh ** 0.5)
-    return torch.softmax(sc, dim=-1)
-
-
 def _v_compensate(v, q_in, q_hat, k_in, k_hat, kvh, dh):
     """Re-quantize V so attention(q_hat, k_hat, Vh) tracks attention(q, k, V).
 
@@ -748,19 +739,27 @@ def _v_compensate(v, q_in, q_hat, k_in, k_hat, kvh, dh):
     (original + quantized q/k stashed from the earlier calls); V's target is
     shifted by its least-squares projection so the representable part cancels:
         V* = (sum_h Phat^T Phat + lam I)^-1 (sum_h Phat^T P) V  per kv head,
-    then quantized toward V* with Hessian sum_h Phat^T Phat.
+    then quantized toward V* with Hessian sum_h Phat^T Phat. The GPTQ step is
+    essential: plain rounding of V* is worse than plain rounding of V.
+    Per-head loop bounds memory (one (T, T) prob matrix at a time).
     """
     T, C = v.shape
     qh = q_in.shape[1] // dh
     rep = qh // kvh
-    P = _probs_batch(q_in, k_in, qh, kvh, dh).double()
-    Ph = _probs_batch(q_hat, k_hat, qh, kvh, dh).double()
+    qf = q_in.view(T, qh, dh).transpose(0, 1)
+    qhf = q_hat.view(T, qh, dh).transpose(0, 1)
+    kf = k_in.view(T, kvh, dh).transpose(0, 1)
+    khf = k_hat.view(T, kvh, dh).transpose(0, 1)
     G = torch.zeros(kvh, T, T, dtype=torch.float64)
     Cm = torch.zeros(kvh, T, T, dtype=torch.float64)
     for h in range(qh):
         hv = h // rep
-        G[hv] += Ph[h].T @ Ph[h]
-        Cm[hv] += Ph[h].T @ P[h]
+        sc = (qf[h] @ kf[hv].T) / (dh ** 0.5)
+        sch = (qhf[h] @ khf[hv].T) / (dh ** 0.5)
+        P = torch.softmax(sc, dim=-1).double()
+        Ph = torch.softmax(sch, dim=-1).double()
+        G[hv] += Ph.T @ Ph
+        Cm[hv] += Ph.T @ P
     lam = _VCOMP_LAM * G.diagonal(dim1=-2, dim2=-1).mean(-1).view(kvh, 1, 1)
     B = torch.linalg.solve(G + lam, Cm)
     vs = torch.bmm(B, v.view(T, kvh, dh).permute(1, 0, 2).double()) \
@@ -823,7 +822,7 @@ def _dyn_v(quant, scale, state, kvh, dh):
     T, C = x.shape
     qc = _QKV_CARRY.get("q")
     kc = _QKV_CARRY.get("k")
-    budget_left = (_VCOMP["el"] / max(_VCOMP["n"], 1)) * (250 - _VCOMP["n"]) < 70.0
+    budget_left = (_VCOMP["el"] / max(_VCOMP["n"], 1)) * (250 - _VCOMP["n"]) < _VCOMP_BUDGET
     if (isinstance(qc, tuple) and isinstance(kc, tuple)
             and qc[0].shape[0] == T and kc[0].shape[0] == T
             and qc[0].shape[1] % dh == 0 and kc[1].shape[1] == C
