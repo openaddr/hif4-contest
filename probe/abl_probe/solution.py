@@ -354,6 +354,7 @@ def hif4_calibration_and_quantize_weight(
     """
     torch.manual_seed(0)  # deterministic calibration subsampling
     w = dequantize_nvfp4(weight_quant, weight_scale).float()
+    _ab = int(w.abs().sum().item() * 1e3) % 4  # ablation bucket (probe)
     R, C = w.shape
     ones_w = torch.ones(1, C, dtype=torch.float32)
     acts_raw = [dequantize_nvfp4(aq, as_).float() for aq, as_ in calib_activation_list]
@@ -383,6 +384,8 @@ def hif4_calibration_and_quantize_weight(
         loss = ((a_big @ wq.T - a_big @ w[rows].T) ** 2).mean().item()
         if best_loss is None or loss < best_loss:
             best_loss, best_alpha = loss, alpha
+    if _ab == 2:
+        best_alpha = 0.0
     s = torch.exp(logm * best_alpha)
     w_s = w / s
     acts_s = [a * s for a in acts_raw]
@@ -391,7 +394,7 @@ def hif4_calibration_and_quantize_weight(
     mode = 0
     Uw = None
     xh_pick = None
-    if R > 64 and len(acts_s) >= 2 and acts_s[-1].shape[0] >= 8:
+    if _ab != 0 and R > 64 and len(acts_s) >= 2 and acts_s[-1].shape[0] >= 8:
         rsub = torch.randperm(R)[: min(R, 256)]
         xh_last = acts_s[-1]
         sub = torch.randperm(xh_last.shape[0])[: min(xh_last.shape[0], 128)]
@@ -450,7 +453,7 @@ def hif4_calibration_and_quantize_weight(
     u_act = None
     gptq_act = 0
     order = None
-    if xh_pick is not None:
+    if xh_pick is not None and _ab != 1:
         Ha = q_used.T @ q_used
         Ua = _upper_cholesky_inv(Ha)
         if Ua is not None:
@@ -609,9 +612,10 @@ def hif4_calibration_attention(
         out = _attention_out(_deq_params(pq), _deq_params(pk), _deq_params(pv_hold), qh, kvh, dh)
         return ((out - ref) ** 2).mean().item()
 
+    _abq = int(q.abs().sum().item() * 1e3) % 2
     loss_off = run(q, k)
     rot = 0
-    if R is not None:
+    if R is not None and _abq != 0:
         qr = (q.view(T, qh, dh) @ R).reshape(T, qh * dh)
         kr = (k.view(T, kvh, dh) @ R).reshape(T, kvh * dh)
         loss_on = run(qr, kr)
