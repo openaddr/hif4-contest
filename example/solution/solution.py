@@ -146,7 +146,7 @@ def _rot_blocks(x: torch.Tensor) -> torch.Tensor:
 
 
 GPTQ_BLOCK = 128
-GPTQ_DAMP = 0.01
+GPTQ_DAMP = 0.05
 
 # --- cross-call Q/K/V carry (judge calls q, k, v sequentially per test) ---
 _QKV_CARRY: dict = {}
