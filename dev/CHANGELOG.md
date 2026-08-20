@@ -86,3 +86,11 @@
 - artifact: dist/solution_v15.zip
 
 - note: v15 rev3 (C-gate) TIMED OUT online (0). rev3 work is strictly a subset of rev2 (which ran 272s) -> cause is judge load variability, 272s left only 9% margin. rev4: dropped E3 weight refinement (+0.12pp for ~20s online), act sweeps 6/3->5/2 -> local linear cal 6.95->4.98s, dyn 0.66->0.59s/call; diag3 +7.2413->+7.2263 (acceptable cost). Online est ~225-240s (25% margin). Resubmit at night
+
+## v15 rev4 readout + probe_cband - 2026-08-21
+- online rev4: 18205 @283s, SAME 6 linear groups WA (20-24,45-49,65-69,85-89,100-104,115-119) as rev1 (18504). rev3 (gate, E3 in) timed out so the gate had never been read out before
+- KEY INFERENCE: rev4's C>4096 path is bit-identical to v14 (passed all) -> the 6 failing groups are C<=4096, i.e. inside the Gram-carry + refinement band. The original "512MiB large-C state" attribution is REFUTED. rev1 (carried Grams at ALL C incl. 512MiB@8192) failed exactly the same 6 -> either no linear groups have C>4096, or the envelope is >=512MiB
+- surviving causes: S1 state size 128MiB@C=4096 (v14 envelope only proven to 64MiB u_act; needs "no C>4096 linear groups" auxiliary) | S2 refinement math corrupts judge-structured data (fp32 M drift / ill-conditioned gw) until cases WA. Priors ~40/50/10 other
+- local exhaustion before probing: _values_to_params re-encodes refined values through the same round+clamp as the v14 GPTQ path (legality identical); validate_frozen_state checks dtype/finiteness/layout only (stress c4096 128MiB states pass locally); flip math is monotone in the exact objective (g<0-only acceptance, rows independent); bf16 IS in FROZEN_STATE_ALLOWED_TENSOR_DTYPES (repair route open if S1)
+- ACTION: dist/probe_cband.zip built (bands: C<=2048 full refine | 2048<C<=4096 carry Grams but NO refinement | >4096 v14). Verified: C=1024 refinement fires (48k/1M elems changed); C=4096 output bit-identical to no-refine variant, state 192MiB (gw+gwf+u_act); self_check 22/22. Work strictly subset of rev4 (283s) -> off-peak submission OK
+- decode: all 6 fail -> S2 math guilty everywhere refined, carry 128MiB proven innocent | all 6 pass -> failing groups are big-C: carry innocent, math-at-big-C guilty, probe config shippable as v16 (~20900-21050) | mixed -> S2 multi-scale | new failures -> nondeterminism, rethink
