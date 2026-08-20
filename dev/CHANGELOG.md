@@ -34,3 +34,7 @@
 - artifact: dist/solution_v9.zip
 
 - note: v9: sf candidates now ranked by EXACT refined error (6-cand R6 grid x jointly-optimal lv tree) instead of greedy-lv ranking — pure-Gaussian element-wise gain over alg1 6.6%->11.9% (near the 12.1% grid optimum); greedy ranking provably overshoots sf. Dropped v8's permutation proxy (online ~0 gain, refunds ~12s). mini +6.54->+6.65; synth lin mean 41.7->45.0/worst 27.1->37.9, attn mean 9.2->14.5/worst -20.8->-4.9. Timing A/B: +6.5s online est -> ~255s/300s. v8 online was 19883 @265.9s
+## v9 - 2026-08-20 09:25:26
+- artifact: dist/solution_v9.zip
+
+- note (v9 rev2, pre-upload): fixed in-sample guard leak in attention calibration. V-GPTQ guard evaluated on `big` (largest calib sample) while its P-Gram was built INCLUDING that sample -> accepted overfit GPTQ-V that hurt test output MSE by 2.8-17.3% on judge-like random data. All attention guards (rotation, V-GPTQ, Q/K-GPTQ) now evaluate on calib[-1] (true hold-out); Grams/Hessians from calib[:-1] only. Synth attn mean 14.5->21.9, worst -4.9->+14.0. mini +6.65->+6.71; attn dyn 0.91->0.79s/call (V-GPTQ skipped). zip rebuilt before first upload
