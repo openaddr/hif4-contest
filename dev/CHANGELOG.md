@@ -126,3 +126,8 @@
 ## v17 - 2026-08-21/22
 - v16 timed out AT NIGHT (user confirmed) -> load explanation dead; absolute runtime must drop. v17 = v16 + REFINE_T_MAX 512 (n_sweeps branch tidied; R=1024 dyn calls skip refinement, ~3/4 of refinement cost removed; local R=512 dyn 0.71s/call, cal 1.96s; diag3 +7.2062, T-cap cost only -0.017pp)
 - est ~262s (v14-class). Readout unchanged: all pass -> bf16 small-state carry legal, score ~20800-21000; same 4 groups WA -> carry guilty even at 32MiB bf16 -> shelve refinement, mainline v14+damp0.1
+
+## v17 BREAKTHROUGH - 2026-08-22
+- online: 23662 @286s ALL PASS (+2883 over v14 20779!). Verdicts locked: (1) bf16 32MiB Gram carry LEGAL on judge, fp32 128MiB carry was the WA killer, refinement math innocent; (2) refinement transfers at ~6.9x mini (11.5pp/linear-case online vs 1.67pp mini) -- same strong-structure amplification as damp (6-8x)
+- remaining refinement pots (value per case ~ constant, cost ~ R): T=1024 cases (2/5 of linear cases, 77% of full-T cost, ~+1100 potential), C=4096 groups incl the 6 formerly-failing high-value ones (~79pp/case, state envelope 48-192MiB unknown), attn side (250 cases, unknown value), E3 weights (+0.12pp mini, ~20s)
+- timing: 286s of ~300 at night -- margin ~14s; every addition must be paid for
