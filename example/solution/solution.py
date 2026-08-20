@@ -11,6 +11,12 @@ Pipeline per tensor:
   4. Exact-invariance transforms chosen per group on calibration data
      (block-diagonal Hadamard rotation for Linear, per-head rotation for
      Q/K), then hold-out-guarded GPTQ on weights and activations.
+  5. Lattice refinement (Linear only): coordinate-descent mantissa flips on
+     the value grid with an exact incremental output-MSE objective. Weights
+     are refined at calibration (calib[:-1] fit, calib[-1] hold-out guard);
+     activations are refined online against Gw = q_used^T q_used and
+     Gwf = w_final^T q_used carried in the state. Greedy top-1 only -- the
+     flip-all variant diverges.
 
 Rows are processed in chunks to bound peak memory.
 """
@@ -148,6 +154,21 @@ def _rot_blocks(x: torch.Tensor) -> torch.Tensor:
 GPTQ_BLOCK = 128
 GPTQ_DAMP = 0.05
 
+# --- lattice refinement: coordinate-descent mant flips on the value grid ---
+# A flip of element (r,c) by +-0.25*unit changes the output MSE
+#   J = ||xq @ q_used^T - x @ w_final^T||^2     (exact, per row)
+# by 2*s*d*M + d^2*Gw[c,c] where d = 0.25*unit and M = res @ q_used is the
+# Gram image of the residual (never materialized; maintained via rank-1
+# updates). Greedy top-1 per row is exact coordinate descent (rows are
+# independent); flip-all variants diverge and must not be used.
+REFINE_ACT_SWEEPS = 6       # activation sweeps (3 sweeps = +1.2pp, 6 = +1.8pp)
+REFINE_W_SWEEPS = 3         # weight sweeps (hold-out curve flat after sweep 1)
+REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
+REFINE_T_MAX = 1024         # activation rows; skip act refinement above this
+REFINE_W_ROWS = 2048        # calib rows feeding the weight objective
+REFINE_W_HOLD_ROWS = 1024   # hold-out rows for the weight guard
+REFINE_W_CHUNK = 2048       # weight-row chunk for the greedy sweep
+
 # --- cross-call Q/K/V carry (judge calls q, k, v sequentially per test) ---
 _QKV_CARRY: dict = {}
 _VCOMP = {"n": 0, "el": 0.0}
@@ -241,6 +262,110 @@ def _gptq_quantize_batched(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tens
             W[..., i2:] -= torch.matmul(E1, hinv[..., i1:i2, i2:])
             W[..., i1:i2] = W1
     return Q
+
+
+def _flip_sel(d: torch.Tensor, M: torch.Tensor, col2: torch.Tensor,
+              v4: torch.Tensor):
+    """Best single-grid-step flip gain per element (negative = improves).
+
+    Delta(s) = 2*s*d*M + d^2*col2 for step direction s in {+1,-1}; optimum
+    s* = -sign(M) with Delta* = -2*d*|M| + d^2*col2.  If s* is illegal
+    (v4 at the +-7 grid edge) the other direction has Delta > 0, so no flip.
+    Returns (g, dirn) with g = INF where no improving legal flip exists.
+    """
+    g = -2.0 * d * M.abs() + (d * d) * col2
+    up = M < 0.0
+    legal = torch.where(up, v4 < 7.0, v4 > -7.0)
+    g = torch.where(legal & (g < 0.0), g, torch.full_like(g, float("inf")))
+    dirn = torch.where(up, 1.0, -1.0)
+    return g, dirn
+
+
+def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
+                       unit: torch.Tensor, gw: torch.Tensor,
+                       gwf: torch.Tensor) -> torch.Tensor:
+    """Greedy top-1 lattice refinement of quantized activation values.
+
+    Objective: the EXACT output error J = ||xq @ q_used^T - x @ w_final^T||^2
+    (x, values and gw/gwf all live in the transformed space: smoothed and,
+    if mode==1, rotated).  The residual image M = res @ q_used is maintained
+    via Gram updates
+        M = xq @ (q_used^T q_used) - x @ (w_final^T q_used) = xq @ gw - x @ gwf
+    so `res` itself is never materialized.  Flips keep v4 in [-7, 7], i.e.
+    mant stays a legal multiple of 0.25 in [0, 1.75].
+    """
+    v4 = torch.round(values / unit * 4.0)
+    d = 0.25 * unit
+    col2 = gw.diagonal()
+    M = (v4 * d) @ gw - x @ gwf
+    for _ in range(REFINE_ACT_SWEEPS):
+        for _ in range(REFINE_ROUNDS):
+            g, dirn = _flip_sel(d, M, col2, v4)
+            idx = g.argmin(dim=1, keepdim=True)
+            fin = torch.isfinite(g.gather(1, idx))
+            dr = dirn.gather(1, idx) * fin.float()
+            v4.scatter_add_(1, idx, dr)
+            M += (dr * d.gather(1, idx)) * gw[idx[:, 0]]
+    return v4 * d
+
+
+def _refine_weight_values(w_final: torch.Tensor, q_used: torch.Tensor,
+                          weight_params: dict, calib_sm: list, tf) -> tuple:
+    """Greedy top-1 lattice refinement of quantized weight values.
+
+    Objective: sum over calibration rows ||x q^T - x w_final^T||^2.  Weight
+    rows are independent, so top-1 flips batched over rows are exact
+    coordinate descent.  Fit rows come from calib[:-1] (capped), the LAST
+    calib sample is held out and gates acceptance (revert on failure).
+    Returns (weight_params, q_used); unchanged inputs when rejected.
+    """
+    if len(calib_sm) < 2:
+        return weight_params, q_used
+    N, C = q_used.shape
+    unit_w = _params_unit_flat(weight_params)
+    d = 0.25 * unit_w
+    v4 = torch.round(q_used / unit_w * 4.0)
+    Gxx = torch.zeros(C, C, dtype=torch.float32)
+    rows = 0
+    for a in calib_sm[:-1]:
+        if rows >= REFINE_W_ROWS:
+            break
+        at = tf(a)
+        at = at[: REFINE_W_ROWS - rows]
+        r0 = 0
+        while r0 < at.shape[0]:
+            r2 = min(r0 + ROW_CHUNK, at.shape[0])
+            Gxx += at[r0:r2].T @ at[r0:r2]
+            r0 = r2
+        rows += at.shape[0]
+    xh = tf(calib_sm[-1])
+    if xh.shape[0] > REFINE_W_HOLD_ROWS:
+        stride = max(1, (xh.shape[0] + REFINE_W_HOLD_ROWS - 1) // REFINE_W_HOLD_ROWS)
+        xh = xh[::stride]
+    xh = xh.contiguous()
+    if rows == 0 or xh.shape[0] == 0:
+        return weight_params, q_used
+    colE = Gxx.diagonal()
+    A = (q_used - w_final) @ Gxx          # A = res^T @ x_cal, res = x(q^T - w_f^T)
+    ref_h = xh @ w_final.T
+    hold0 = ((xh @ q_used.T - ref_h) ** 2).mean().item()
+    if not (0.0 < hold0 < float("inf")):
+        return weight_params, q_used
+    for _ in range(REFINE_W_SWEEPS):
+        for _ in range(REFINE_ROUNDS):
+            for i1 in range(0, N, REFINE_W_CHUNK):
+                i2 = min(i1 + REFINE_W_CHUNK, N)
+                g, dirn = _flip_sel(d[i1:i2], A[i1:i2], colE, v4[i1:i2])
+                idx = g.argmin(dim=1, keepdim=True)
+                fin = torch.isfinite(g.gather(1, idx))
+                dr = dirn.gather(1, idx) * fin.float()
+                v4[i1:i2].scatter_add_(1, idx, dr)
+                A[i1:i2] += (dr * d[i1:i2].gather(1, idx)) * Gxx[idx[:, 0]]
+    wn = v4 * d
+    hold1 = ((xh @ wn.T - ref_h) ** 2).mean().item()
+    if hold1 < hold0:
+        return _values_to_params(wn.contiguous(), weight_params), wn.contiguous()
+    return weight_params, q_used
 
 
 def _params_unit_flat(p: dict) -> torch.Tensor:
@@ -484,12 +609,30 @@ def hif4_calibration_and_quantize_weight(
             else:
                 order = None
 
+    # ---- lattice weight refinement (hold-out guarded), then Gram carries ----
+    gw = gwf = None
+    try:
+        weight_params, q_used = _refine_weight_values(
+            w_final, q_used, weight_params, acts_s, tf_final)
+    except Exception:
+        pass
+    try:
+        # activation refinement targets the exact output error, so the
+        # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
+        # in the transformed space (post s/mode; the dynamic x lives there)
+        gw = (q_used.T @ q_used).contiguous()
+        gwf = (w_final.T @ q_used).contiguous()
+    except Exception:
+        gw = gwf = None
+
     activation_state = {
         "s": s.contiguous(),
         "mode": mode,
         "u_act": u_act,
         "g": gptq_act,
         "order": (order.contiguous() if (gptq_act == 1 and order is not None) else None),
+        "gw": gw,
+        "gwf": gwf,
     }
     return {"weight_params": weight_params, "activation_state": activation_state}
 
@@ -518,20 +661,35 @@ def hif4_dynamic_quantize_activation(
     if mode == 1:
         x = _rot_blocks(x)
     p = _quantize_weighted(x, torch.ones(1, C, dtype=torch.float32))
+    unit = _params_unit_flat(p)
+    values = None
     if isinstance(activation_state, dict) and activation_state.get("g") == 1:
         u = activation_state.get("u_act")
         order = activation_state.get("order")
         if isinstance(u, torch.Tensor) and tuple(u.shape) == (C, C):
-            unit = _params_unit_flat(p)
             if isinstance(order, torch.Tensor) and order.numel() == C:
                 ol = order.long()
                 xs = x[:, ol]
                 q = _gptq_quantize_values(xs, unit[:, ol], u.float())
                 q0 = torch.empty_like(q)
                 q0[:, ol] = q
-                return _values_to_params(q0.contiguous(), p)
-            q = _gptq_quantize_values(x, unit, u.float())
-            return _values_to_params(q, p)
+                values = q0
+            else:
+                values = _gptq_quantize_values(x, unit, u.float())
+    # ---- lattice refinement on the final values (transformed space) ----
+    if isinstance(activation_state, dict) and R <= REFINE_T_MAX:
+        gw = activation_state.get("gw")
+        gwf = activation_state.get("gwf")
+        if (isinstance(gw, torch.Tensor) and isinstance(gwf, torch.Tensor)
+                and tuple(gw.shape) == (C, C) and tuple(gwf.shape) == (C, C)):
+            try:
+                v0 = values if values is not None else _deq_params(p)
+                v1 = _refine_act_values(x, v0, unit, gw, gwf)
+                return _values_to_params(v1.contiguous(), p)
+            except Exception:
+                pass
+    if values is not None:
+        return _values_to_params(values.contiguous(), p)
     return p
 
 
