@@ -114,3 +114,7 @@
 - VERDICT: carry guilty (~90%). The 2 passing groups landed bucket 0 (v14 exact, guaranteed pass); the 4 failing are in carry buckets. Alternative (math guilty) requires all 4 failing in bucket 2: multinomial P ~8%. No new failures => carrying did not break any previously-passing group (the 6 are plausibly ALL the big-C groups). Score consistent with ~4 high-value groups zeroed
 - v16 = rev4 + Grams stored bf16 (judge-legal dtype; dynamic upcasts to fp32, diag3 +7.2235 vs +7.2263 = -0.0028pp essentially free) + REFINE_MAX_C 4096->2048 (C=2048 measured total state 32MiB incl u_act; worst 48MiB < v14-proven 64MiB). C>2048 = bit-identical v14. self_check 22/22, sweeps 5/2 unchanged
 - v16 decode: all pass -> stable base + small-C refinement (~20800-21000); same 4 fail -> envelope <48MiB OR math guilty (the 8% branch) -> drop refinement, re-base on v14, next single-variable damp=0.1
+
+## v16 timeout readout - 2026-08-21
+- v16 online: TIMEOUT (0). v16 work is a strict subset of rev4 (refinement band shrunk 4096->2048, states smaller, plus negligible bf16 convert/upcast), rev4 ran 283s in daytime -> cause is judge load (same pattern as rev3 timeout at 9% margin). NOT a code regression
+- ACTION: resubmit the SAME dist/solution_v16.zip unchanged at night/off-peak (deterministic judge -> night pass delivers the full carry-vs-math readout AND score). If it times out AGAIN at night (very unlikely), cut sweeps 5/2 -> 3/2 and rebuild. Daytime submissions reserved for v14-base-class experiments only
