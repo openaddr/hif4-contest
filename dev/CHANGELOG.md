@@ -43,3 +43,7 @@
 - artifact: dist/solution_v10.zip
 
 - note: v10 = v9.2 math (diag3 bit-identical +6.7110) with pure speedups: batched GPTQ (one python column loop for all heads sharing a Hessian — Q dyn was 0.673s/call, 16 heads x 256-col loops; now 0.38s/call total q+k+v), consolidated hold-out guard quantizations (q/k/v quantized once for both guards), V quantization hoisted out of the rotation A/B. Local per-group: attn cal 2.83->1.81s, dyn 0.79->0.38s/call. Online est ~247s (from 274.8). Online history: v9.1 20169@289.1, v9.2 20183@274.8
+## v11 - 2026-08-20 10:34:22
+- artifact: dist/solution_v11.zip
+
+- note: v11 = v10 + finer alpha grid {0,0.15,0.3,0.5} (calib-only, +1.5s online est). Probe decomposition (17107@223s): linear 17107 (68.4/case, +239 vs v7), attn 3076 (12.3/case, +110 vs v7). This session's dead ends (all measured, not shipped): W_eff LS correction (E unpredictable, R2=0.3%), token-mass row weighting (mathematically null on per-row search), V column-mean fix (P peaked, V only 16-30% of attn err), NVFP4 exact-grid candidates (zero exact blocks in real data), Q/K channel smoothing (mini +2%, synth ~0 -> judge ~0), wide sf grid for W (2% of 23% side). Online: v10 est ~247s

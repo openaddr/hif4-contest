@@ -31,7 +31,7 @@ ROW_CHUNK = 2048
 # ablation switches (keep True / non-empty for submission)
 USE_WEIGHTS = True
 LV_REFINE = True
-ALPHA_GRID = (0.0, 0.25, 0.5)
+ALPHA_GRID = (0.0, 0.15, 0.3, 0.5)
 BETA_GRID = (0.0, 0.25)
 GAMMA_GRID = (0.0, 0.15, 0.3, 0.5)
 
