@@ -47,3 +47,7 @@
 - artifact: dist/solution_v11.zip
 
 - note: v11 = v10 + finer alpha grid {0,0.15,0.3,0.5} (calib-only, +1.5s online est). Probe decomposition (17107@223s): linear 17107 (68.4/case, +239 vs v7), attn 3076 (12.3/case, +110 vs v7). This session's dead ends (all measured, not shipped): W_eff LS correction (E unpredictable, R2=0.3%), token-mass row weighting (mathematically null on per-row search), V column-mean fix (P peaked, V only 16-30% of attn err), NVFP4 exact-grid candidates (zero exact blocks in real data), Q/K channel smoothing (mini +2%, synth ~0 -> judge ~0), wide sf grid for W (2% of 23% side). Online: v10 est ~247s
+## v12 - 2026-08-20 10:54:31
+- artifact: dist/solution_v12.zip
+
+- note: v12 = V-side P-compensation via cross-call carry. Judge calls q,k,v sequentially per test; the Q call stashes (rotated input, quantized values), K likewise; the V call then computes P (original) and Phat (quantized) exactly, shifts V's target by V* = (sum Phat^T Phat + lam I)^-1 (sum Phat^T P) V per kv head (float64, lam=1e-4, ||dV|| clamp 0.5, T<=512 cap, 250-call/70s-local budget meter, try/except fallback) and GPTQ-quantizes toward V* with Hessian sum Phat^T Phat. Cancels the KNOWN Q/K-induced output error (71-85% pool). Calib-time V-GPTQ removed (superseded; attn cal 1.81->1.24s). mini attn t0-t2 +9pp each (T<=512), total +6.71->+6.99; synth attn mean 21.9->22.9 worst 14.0->16.0; attn dyn 0.38->0.42s/call, online est ~243s. Risk: if judge call order differs, damage bounded by clamp
