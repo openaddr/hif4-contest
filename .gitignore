@@ -5,3 +5,5 @@ __pycache__/
 Thumbs.db
 example/mini_sample/
 ~$*
+dev/stress_data/
+dev/stress_*.log

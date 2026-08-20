@@ -75,3 +75,7 @@
 
 - note (v15 rev2, pre-upload): T-adaptive act sweeps (<=512: 6, <=1024: 3, else 0; caps per-call cost ~0.7s local, worst-case timeout risk removed) and weight sweeps 3->1 (hold-out curve flat). diag3 +7.2508->+7.2413, linear cal 9.61->7.5s, dyn 0.85->0.68s/call. Online est ~275s night
 - note: v14 online 20779 @258s (+596 vs v10!). Mini predicted only +0.0105pp/+70-100 — the damping change (0.01->0.05) paid 6-8x more on judge data. Interpretation: judge Hessians are far more strongly conditioned (strong-structure paradigm again); their optimal damping sits right of mini's. Mini damp curve plateau 0.05-0.075, declines by 0.2 — judge's curve likely shifted right: damp 0.1 test is a queued candidate. v15 (lattice refinement, mini linear +1.67pp) pending online
+## v15 - 2026-08-20 21:47:33
+- artifact: dist/solution_v15.zip
+- note: v15 rev3: online WA root cause = Gram STATE SIZE, not param legality. gw/gwf add 2*C^2*4B to activation_state (432MiB @C=6144, 768MiB @C=8192, 3GiB @C=16384) which the judge clones per online call; v14 passed with at most one C^2 fp32 (u_act). Local stress (dev/stress.py, 16 shapes incl. C=16384/T=2048/spikes/flat/g=0/mode=0): ALL pass official validation even with 3GiB states -> params/state formally legal everywhere; failures are judge-side memory/transfer of huge states. Fix: REFINE_MAX_C=4096 gates weight refine + Gram carry; C>4096 bit-identical to v14 (state 768->256MiB @8192, dyn 5.7->3.7s, stress check 63->43s). Verified: diag3 +7.2413 (=v15 rev2), mini 22/22, stress recheck 6/6 PASS
+

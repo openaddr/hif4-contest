@@ -16,7 +16,9 @@ Pipeline per tensor:
      are refined at calibration (calib[:-1] fit, calib[-1] hold-out guard);
      activations are refined online against Gw = q_used^T q_used and
      Gwf = w_final^T q_used carried in the state. Greedy top-1 only -- the
-     flip-all variant diverges.
+     flip-all variant diverges. Both stages are gated to C <= REFINE_MAX_C:
+     the two C x C fp32 Grams are 2*C^2*4 bytes of state, and the judge only
+     tolerates the v14 state envelope above that cap.
 
 Rows are processed in chunks to bound peak memory.
 """
@@ -165,6 +167,13 @@ REFINE_ACT_SWEEPS = 6       # activation sweeps (3 sweeps = +1.2pp, 6 = +1.8pp)
 REFINE_W_SWEEPS = 1         # weight sweeps (hold-out curve flat after sweep 1)
 REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
 REFINE_T_MAX = 1024         # activation rows; skip act refinement above this
+REFINE_MAX_C = 4096         # channel cap for the whole lattice stage; the two
+                            # C x C fp32 Grams put 2*C^2*4 bytes into the
+                            # activation_state (plus the judge's per-call state
+                            # clone doubling it). v15 carried them at every C
+                            # and the judge WA'd whole large-C groups (512 MiB+
+                            # states); above this cap the pipeline must stay in
+                            # the proven v14 state/memory envelope (u_act only).
 REFINE_W_ROWS = 2048        # calib rows feeding the weight objective
 REFINE_W_HOLD_ROWS = 1024   # hold-out rows for the weight guard
 REFINE_W_CHUNK = 2048       # weight-row chunk for the greedy sweep
@@ -613,20 +622,28 @@ def hif4_calibration_and_quantize_weight(
                 order = None
 
     # ---- lattice weight refinement (hold-out guarded), then Gram carries ----
+    # gw/gwf are two C x C fp32 tensors => 2*C^2*4 bytes of activation_state
+    # that the judge clones per online call. v15 carried them at every C and
+    # whole large-C groups came back WA online (512 MiB+ states at C=8192),
+    # while v14 (identical minus the Grams, one C^2 fp32 u_act at most)
+    # passed. Everything lattice-related is gated by REFINE_MAX_C; above it
+    # the pipeline is bit-identical to v14 and the state stays in the proven
+    # envelope.
     gw = gwf = None
-    try:
-        weight_params, q_used = _refine_weight_values(
-            w_final, q_used, weight_params, acts_s, tf_final)
-    except Exception:
-        pass
-    try:
-        # activation refinement targets the exact output error, so the
-        # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
-        # in the transformed space (post s/mode; the dynamic x lives there)
-        gw = (q_used.T @ q_used).contiguous()
-        gwf = (w_final.T @ q_used).contiguous()
-    except Exception:
-        gw = gwf = None
+    if C <= REFINE_MAX_C:
+        try:
+            weight_params, q_used = _refine_weight_values(
+                w_final, q_used, weight_params, acts_s, tf_final)
+        except Exception:
+            pass
+        try:
+            # activation refinement targets the exact output error, so the
+            # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
+            # in the transformed space (post s/mode; the dynamic x lives there)
+            gw = (q_used.T @ q_used).contiguous()
+            gwf = (w_final.T @ q_used).contiguous()
+        except Exception:
+            gw = gwf = None
 
     activation_state = {
         "s": s.contiguous(),
