@@ -131,3 +131,11 @@
 - online: 23662 @286s ALL PASS (+2883 over v14 20779!). Verdicts locked: (1) bf16 32MiB Gram carry LEGAL on judge, fp32 128MiB carry was the WA killer, refinement math innocent; (2) refinement transfers at ~6.9x mini (11.5pp/linear-case online vs 1.67pp mini) -- same strong-structure amplification as damp (6-8x)
 - remaining refinement pots (value per case ~ constant, cost ~ R): T=1024 cases (2/5 of linear cases, 77% of full-T cost, ~+1100 potential), C=4096 groups incl the 6 formerly-failing high-value ones (~79pp/case, state envelope 48-192MiB unknown), attn side (250 cases, unknown value), E3 weights (+0.12pp mini, ~20s)
 - timing: 286s of ~300 at night -- margin ~14s; every addition must be paid for
+## v18 - 2026-08-21 01:11:47
+- artifact: dist/solution_v18.zip
+- note: single variable: GPTQ_DAMP 0.05->0.1 on the v17 base. Rationale: judge damp curve is right-shifted (0.01->0.05 paid +596 online at only +0.37pp mini); with refinement in the pipeline mini itself now prefers 0.1 (diag3 +7.2062->+7.2207). Runtime identical to v17 (286s passed). If score drops, v17 stays the banked base and the damp peak is <=0.05
+
+
+## v18 - 2026-08-22
+- sweep/round curve measured locally: saturated (5/20 +7.2062 -> 8/32 +7.2212, i.e. +0.015pp ~= +25 online max) -- small-T depth is done
+- v18 = v17 + GPTQ_DAMP 0.1 (single variable). Mini IMPROVED +7.2062->+7.2207 (refinement shifted the local optimum right too). Remaining pots ranked: T=1024 cases ~+1100 @ +13s (timeout risk at 286s base), C=4096 bf16 grams (envelope 48-192MiB unknown, needs half-probe), attn-side refinement (250 cases, unexplored, build required), timing audit to fund T=1024

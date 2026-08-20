@@ -153,7 +153,7 @@ def _rot_blocks(x: torch.Tensor) -> torch.Tensor:
 
 
 GPTQ_BLOCK = 128
-GPTQ_DAMP = 0.05
+GPTQ_DAMP = 0.1
 
 # --- lattice refinement: coordinate-descent mant flips on the value grid ---
 # A flip of element (r,c) by +-0.25*unit changes the output MSE
