@@ -165,7 +165,11 @@ GPTQ_DAMP = 0.05
 REFINE_ACT_SWEEPS = 6       # activation sweeps (3 sweeps = +1.2pp, 6 = +1.8pp)
 REFINE_W_SWEEPS = 1         # weight sweeps (hold-out curve flat after sweep 1)
 REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
-REFINE_T_MAX = 1024         # activation rows; skip act refinement above this
+REFINE_T_MAX = 512          # activation rows; skip act refinement above this.
+                            # R=1024 calls carried ~3/4 of the refinement
+                            # cost (cost ~ R); capping at 512 brought the
+                            # whole run back to v14-class timing after v16
+                            # timed out even at night (congested judging)
 REFINE_MAX_C = 2048         # channel cap for the whole lattice stage. carry3
                             # probe verdict: carrying two C x C fp32 Grams
                             # (128 MiB @C=4096) made whole judge groups WA
@@ -306,9 +310,9 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     d = 0.25 * unit
     col2 = gw.diagonal()
     M = (v4 * d) @ gw - x @ gwf
-    # T-adaptive sweep depth: cap per-call cost (T=1024 -> 3 sweeps ~0.7s local)
+    # T-adaptive sweep depth (only T <= REFINE_T_MAX reaches here)
     T = values.shape[0]
-    n_sweeps = 5 if T <= 512 else 2 if T <= 1024 else 0
+    n_sweeps = 5 if T <= 512 else 0
     for _ in range(n_sweeps):
         for _ in range(REFINE_ROUNDS):
             g, dirn = _flip_sel(d, M, col2, v4)

@@ -118,3 +118,11 @@
 ## v16 timeout readout - 2026-08-21
 - v16 online: TIMEOUT (0). v16 work is a strict subset of rev4 (refinement band shrunk 4096->2048, states smaller, plus negligible bf16 convert/upcast), rev4 ran 283s in daytime -> cause is judge load (same pattern as rev3 timeout at 9% margin). NOT a code regression
 - ACTION: resubmit the SAME dist/solution_v16.zip unchanged at night/off-peak (deterministic judge -> night pass delivers the full carry-vs-math readout AND score). If it times out AGAIN at night (very unlikely), cut sweeps 5/2 -> 3/2 and rebuild. Daytime submissions reserved for v14-base-class experiments only
+## v17 - 2026-08-21 00:56:49
+- artifact: dist/solution_v17.zip
+- note: v16 timed out AT NIGHT -> judge congestion is not day/night anymore; cut absolute runtime: REFINE_T_MAX 1024->512 (R=1024 calls carried ~3/4 of refinement cost; diag3 +7.2235->+7.2062, -0.017pp). Total est back to v14-class ~262s. Carry/WA readout unchanged (carry happens at calibration; pass/fail pattern still decides bf16-carry vs math). If THIS times out too, refinement is shelved and we go v14+damp0.1
+
+
+## v17 - 2026-08-21/22
+- v16 timed out AT NIGHT (user confirmed) -> load explanation dead; absolute runtime must drop. v17 = v16 + REFINE_T_MAX 512 (n_sweeps branch tidied; R=1024 dyn calls skip refinement, ~3/4 of refinement cost removed; local R=512 dyn 0.71s/call, cal 1.96s; diag3 +7.2062, T-cap cost only -0.017pp)
+- est ~262s (v14-class). Readout unchanged: all pass -> bf16 small-state carry legal, score ~20800-21000; same 4 groups WA -> carry guilty even at 32MiB bf16 -> shelve refinement, mainline v14+damp0.1
