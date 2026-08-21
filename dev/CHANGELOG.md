@@ -191,3 +191,7 @@
 - probe_c4096: 23885 @257s NO new WA -> 128 MiB envelope SAFE (coords now 48 ok / 128 ok / 192 fails). Hash-even half worth +70. Full extension rejected: +62s -> 288s death zone (Gram compute ~15s + R1024 M-inits ~7s per half)
 - v21 = probe promoted + E3@hash-even-4096 + T<=512 cap at C>2048: consolidation roll, expected 23885+-30 (T-cap gives back ~28, E3 adds +25-50). diag3 bit-identical +7.2478 (mini C=2048 unaffected), synthetic hash-even verified (128MiB carry, R<=512 refine ON / R=1024 OFF), 22/22
 - HONEST MAP: known remaining pots total +100-200 -> mechanism-tree ceiling ~24100. Gap to #1 (~26519) needs a NEW mechanism class. Launched decomp agent: error by (T,C) buckets + small-T sf-anchor underestimation study + beta-prior prototype (per-block fp16 calib prior, ~KB state). Attention oracle (+1900) locked by call isolation; post-GPTQ grid re-search family has dead track record (-83%)
+## v22 - 2026-08-21 19:27:58
+- artifact: dist/solution_v22.zip
+- note: v22 = v21 + T=1024 sweep equalization 2->5 (C<=2048; C>2048 stays T<=512-capped). Decomposition study finding: T=1024 was the worst bucket purely from the sweep cap; synthetic mean +6.2pp/case, mini +0.0116pp (v21 +7.2478 -> +7.2594), online estimate +60..+400. Cost +12s online (R1024 call 1.2->2.2s local). Beta sf-prior NO-SHIPed (premise false: T=10 is the BEST bucket, per-row anchoring already handles small T; sweep was uniformly negative -9k..-22k pp)
+
