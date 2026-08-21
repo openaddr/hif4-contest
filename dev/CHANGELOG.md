@@ -186,3 +186,8 @@
 - artifact: dist/solution_v21.zip
 - note: v21 = probe_c4096 promoted to mainline + E3 extended to hash-even C<=4096 groups + T<=512 cap for C>2048 refinement (R=1024 M-inits too hot: full extension would be 288s). Envelope coords now proven: 48/128 MiB pass, 192 fails. Expected ~23900 @ ~255-262s (probe was 23885@257; +E3@4096 +25-50, -R1024 refinement -7s)
 
+
+## v21 built + strategic reassessment - 2026-08-22
+- probe_c4096: 23885 @257s NO new WA -> 128 MiB envelope SAFE (coords now 48 ok / 128 ok / 192 fails). Hash-even half worth +70. Full extension rejected: +62s -> 288s death zone (Gram compute ~15s + R1024 M-inits ~7s per half)
+- v21 = probe promoted + E3@hash-even-4096 + T<=512 cap at C>2048: consolidation roll, expected 23885+-30 (T-cap gives back ~28, E3 adds +25-50). diag3 bit-identical +7.2478 (mini C=2048 unaffected), synthetic hash-even verified (128MiB carry, R<=512 refine ON / R=1024 OFF), 22/22
+- HONEST MAP: known remaining pots total +100-200 -> mechanism-tree ceiling ~24100. Gap to #1 (~26519) needs a NEW mechanism class. Launched decomp agent: error by (T,C) buckets + small-T sf-anchor underestimation study + beta-prior prototype (per-block fp16 calib prior, ~KB state). Attention oracle (+1900) locked by call isolation; post-GPTQ grid re-search family has dead track record (-83%)
