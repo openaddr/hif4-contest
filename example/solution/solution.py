@@ -788,6 +788,11 @@ def hif4_calibration_and_quantize_weight(
     gw = gwf = None
     if C <= REFINE_MAX_C:
         try:
+            weight_params, q_used = _refine_weight_values(
+                w_final, q_used, weight_params, acts_s, tf_final)
+        except Exception:
+            pass
+        try:
             # activation refinement targets the exact output error, so the
             # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
             # in the transformed space (post s/mode; the dynamic x lives there)
