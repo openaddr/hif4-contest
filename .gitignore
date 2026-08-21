@@ -7,3 +7,5 @@ example/mini_sample/
 ~$*
 dev/stress_data/
 dev/stress_*.log
+dev/audit/data/
+*.pt

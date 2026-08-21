@@ -25,7 +25,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 import torch
 
 SF_MIN = 2.0 ** -48
@@ -124,98 +123,6 @@ def _quant_chunk(xb: torch.Tensor, wblk: torch.Tensor, grid=CAND_GRID) -> dict[s
     }
 
 
-def _quant_chunk_vec(xb: torch.Tensor, wblk: torch.Tensor, grid) -> dict[str, torch.Tensor]:
-    """BIT-IDENTICAL candidate-batched twin of _quant_chunk: the sf
-    candidates are evaluated in batches of KB=2 along a new dim (one fp32
-    scratch, in-place ops) instead of one python round per candidate, which
-    cuts torch op-launch overhead ~2x on large row chunks. The lv2/lv3 inner
-    search and the candidate merge use sequential torch.where in the ORIGINAL
-    order with the original strict/tie semantics, so the selected
-    sf/lv2/lv3/mant match _quant_chunk bitwise (verified torch.equal incl.
-    tie-heavy inputs)."""
-    KB = 2
-    ab = xb.abs()
-    amax = ab.amax(dim=(2, 3, 4), keepdim=True)
-    t = (amax / 7.0).clamp_min(1e-38)
-    e0 = torch.floor(torch.log2(t)).squeeze(-1).squeeze(-1).squeeze(-1)  # (r,nb)
-    K = len(grid)
-    offs = torch.tensor([float(k) for k, _ in grid])
-    sigs = torch.tensor([float(s) for _, s in grid])
-    sf_all = (torch.exp2(e0.unsqueeze(-1) + offs) * sigs).clamp(SF_MIN, SF_MAX)
-    abB = ab.unsqueeze(2)                    # (r,nb,1,8,2,4) view
-    wbB = (wblk.unsqueeze(2) if wblk.dim() == 5
-           else wblk.unsqueeze(0).unsqueeze(2))  # broadcastable (r?,nb,1,8,2,4)
-    r, nb = e0.shape
-    tmp = torch.empty((r, nb, KB, 8, 2, 4), dtype=torch.float32)
-
-    def run_batch(sf):
-        kB = sf.shape[2]
-        best_e2 = best_l2 = best_l3 = None
-        for lv2_c in (1.0, 2.0):
-            e3_list = []
-            for lv3_c in (1.0, 2.0):
-                unit = (sf.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-                        * lv2_c * lv3_c)                     # (r,nb,kB,1,1,1)
-                tgt = tmp[:, :, :kB] if kB < KB else tmp
-                torch.div(abB, unit, out=tgt)
-                tgt.mul_(4.0)
-                tgt.round_()
-                tgt.mul_(0.25)
-                tgt.clamp_(0.0, 1.75)                        # mant
-                tgt.mul_(unit)
-                tgt.sub_(abB)
-                tgt.pow_(2)
-                tgt.mul_(wbB)
-                e3_list.append(tgt.sum(dim=5))               # (r,nb,kB,8,2)
-            take1 = e3_list[0] <= e3_list[1]                 # lv3=1.0 wins ties
-            e3 = torch.where(take1, e3_list[0], e3_list[1])
-            lv3c = torch.where(take1, 1.0, 2.0)              # (r,nb,kB,8,2)
-            e2 = e3.sum(dim=4)                               # (r,nb,kB,8)
-            if best_e2 is None:
-                best_e2 = e2
-                best_l2 = torch.full_like(e2, lv2_c)
-                best_l3 = lv3c
-            else:
-                take2 = e2 < best_e2                         # earlier lv2 wins ties
-                best_e2 = torch.where(take2, e2, best_e2)
-                best_l2 = torch.where(take2, torch.full_like(e2, lv2_c), best_l2)
-                best_l3 = torch.where(take2.unsqueeze(-1), lv3c, best_l3)
-        return best_e2.sum(dim=3), best_l2, best_l3          # (r,nb,kB)
-
-    err_best = sf_best = lv2_best = lv3_best = None
-    for k0 in range(0, K, KB):
-        sf = sf_all[:, :, k0:k0 + KB]
-        err, l2, l3 = run_batch(sf)
-        for kk in range(err.shape[2]):
-            err_k = err[:, :, kk]
-            if err_best is None:
-                err_best = err_k
-                sf_best = sf[:, :, kk]
-                lv2_best = l2[:, :, kk]
-                lv3_best = l3[:, :, kk]
-            else:
-                take = err_k < err_best                      # earlier cand wins ties
-                take2 = take.unsqueeze(-1)
-                take3 = take.unsqueeze(-1).unsqueeze(-1)
-                err_best = torch.where(take, err_k, err_best)
-                sf_best = torch.where(take, sf[:, :, kk], sf_best)
-                lv2_best = torch.where(take2, l2[:, :, kk], lv2_best)
-                lv3_best = torch.where(take3, l3[:, :, kk], lv3_best)
-
-    sf = sf_best[..., None, None, None]
-    lv2 = lv2_best[..., None, None]
-    lv3 = lv3_best[..., None]
-    unit = sf * lv2 * lv3
-    mant = torch.clamp(torch.round(ab / unit * 4.0) / 4.0, 0.0, 1.75)
-    return {
-        "scale_factor": sf,
-        "scale_lv2": lv2,
-        "scale_lv3": lv3,
-        "sign": torch.sign(xb),
-        "mant": mant,
-    }
-
-
 _H64_CACHE: torch.Tensor | None = None
 
 
@@ -298,7 +205,7 @@ def _upper_cholesky_inv(H: torch.Tensor):
         return None
 
 
-def _gptq_quantize_values_torch(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
+def _gptq_quantize_values(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
     """Column-wise GPTQ over the last axis. x, unit: (R, C); hinv: (C, C)
     upper Cholesky of H^-1. Returns values on the grid defined by unit."""
     R, C = x.shape
@@ -327,61 +234,6 @@ def _gptq_quantize_values_torch(x: torch.Tensor, unit: torch.Tensor, hinv: torch
             W[:, i2:] -= E1 @ hinv[i1:i2, i2:]
             W[:, i1:i2] = W1
     return Q
-
-
-def _gptq_quantize_values_np(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
-    """BIT-IDENTICAL numpy twin of _gptq_quantize_values_torch for few-row
-    inputs, where torch per-op launch overhead dominates (dynamic calls:
-    R=T<=1024; calibration proxy/search calls: R<=256). Elementwise fp32
-    numpy ops share the torch buffers; the block-boundary matmul stays in
-    torch so BLAS accumulation order is unchanged. Verified torch.equal on
-    randomized stress inputs incl. negatives/zeros and end-to-end."""
-    R, C = x.shape
-    W = x.clone()
-    Q = torch.empty_like(W)
-    unp = (unit if unit.is_contiguous() else unit.contiguous()).numpy()
-    hnp = hinv.contiguous().numpy()
-    npr_, npa_, npw_, npc_ = np.round, np.abs, np.where, np.clip
-    one, mone = np.float32(1.0), np.float32(-1.0)
-    for i1 in range(0, C, GPTQ_BLOCK):
-        i2 = min(i1 + GPTQ_BLOCK, C)
-        W1 = W[:, i1:i2].clone()
-        Q1 = torch.zeros_like(W1)
-        E1 = torch.zeros_like(W1)
-        w1, q1, e1 = W1.numpy(), Q1.numpy(), E1.numpy()
-        Hi = hnp[i1:i2, i1:i2]
-        u = unp[:, i1:i2]
-        last = i2 - i1 - 1
-        for i in range(i2 - i1):
-            w = w1[:, i]
-            ui = u[:, i]
-            m = npr_(npa_(w) / ui * 4.0)
-            npc_(m, 0.0, 7.0, out=m)
-            m *= 0.25
-            s = npw_(w >= 0, one, mone)
-            q = s * m * ui
-            q1[:, i] = q
-            d = Hi[i, i]
-            if d < 1e-30:
-                d = np.float32(1e-30)
-            e1[:, i] = (w - q) / d
-            if i < last:
-                w1[:, i + 1:] -= e1[:, i][:, None] * Hi[i, i + 1:]
-        Q[:, i1:i2] = Q1
-        if i2 < C:
-            W[:, i2:] -= E1 @ hinv[i1:i2, i2:]
-            W[:, i1:i2] = W1
-    return Q
-
-
-def _gptq_quantize_values(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
-    """GPTQ values with a row-count dispatch: numpy loop is 1.5-3x faster
-    for R <= 2048 (per-op overhead bound) and 1.5x slower at R = 8192
-    (throughput bound), so big weight GPTQs stay on the torch path. Both
-    paths produce identical results."""
-    if x.shape[0] > 2048:
-        return _gptq_quantize_values_torch(x, unit, hinv)
-    return _gptq_quantize_values_np(x, unit, hinv)
 
 
 def _gptq_quantize_batched(x: torch.Tensor, unit: torch.Tensor, hinv: torch.Tensor) -> torch.Tensor:
@@ -560,12 +412,9 @@ def _quantize_weighted(x2d: torch.Tensor, wgt: torch.Tensor, grid=CAND_GRID) -> 
         wgt = wgt / wgt.mean().clamp_min(1e-30)
         wgt = wgt.clamp(0.25, 4.0)
     w2d = wgt if wgt.shape == (R, C) else wgt.expand(R, C)
-    # candidate-batched twin wins on large inputs (weight matrices, big-T
-    # dynamic calls); the plain loop is faster below ~4M elements
-    fn = _quant_chunk_vec if R * C >= 4_000_000 else _quant_chunk
     for s0 in range(0, R, ROW_CHUNK):
         x_chunk = x2d[s0:s0 + ROW_CHUNK]
-        p = fn(
+        p = _quant_chunk(
             x_chunk.reshape(-1, nb, 8, 2, 4),
             w2d[s0:s0 + ROW_CHUNK].reshape(-1, nb, 8, 2, 4),
             grid,
@@ -742,17 +591,14 @@ def hif4_calibration_and_quantize_weight(
     order = None
     if xh_pick is not None:
         Ha = q_used.T @ q_used
-        # act-ordered Cholesky first: when it succeeds (damped PSD Grams make
-        # failure a numerical impossibility in practice) the un-ordered Ua was
-        # computed and thrown away -- one full C x C inversion per group.
-        order = torch.argsort(Ha.diagonal(), descending=True)
-        Ua_o = _upper_cholesky_inv(Ha[order][:, order])
-        if Ua_o is not None:
-            Ua = Ua_o
-        else:
-            order = None
-            Ua = _upper_cholesky_inv(Ha)
+        Ua = _upper_cholesky_inv(Ha)
         if Ua is not None:
+            order = torch.argsort(Ha.diagonal(), descending=True)
+            Ua_o = _upper_cholesky_inv(Ha[order][:, order])
+            if Ua_o is not None:
+                Ua = Ua_o
+            else:
+                order = None
             p_r = _quantize_weighted(xh_pick, ones_w)
             xr = (p_r["sign"] * p_r["mant"] * p_r["scale_lv3"] * p_r["scale_lv2"]
                   * p_r["scale_factor"]).flatten(-4, -1)

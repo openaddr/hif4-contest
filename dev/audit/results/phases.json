@@ -1,0 +1,287 @@
+[
+ {
+  "name": "c4096_n4096",
+  "C": 4096,
+  "N": 4096,
+  "threads": 10,
+  "calib_wall_orig": 7.38095170003362,
+  "calib_wall_instr": 7.426119599957019,
+  "calib_phases": {
+   "cal.weight_gptq": 2.1988537000725046,
+   "cal.xform_choice": 2.149021700024605,
+   "cal.weight_quant": 1.3274801999796182,
+   "cal.xform_choice.proxy": 1.2981938000302762,
+   "cal.xform_choice.chol": 0.6318269999464974,
+   "cal.actgptq.gptq": 0.5088536000112072,
+   "cal.actgptq.order": 0.33370179997291416,
+   "cal.actgptq.chol": 0.31558950000908226,
+   "cal.actgptq.gram": 0.2704255999997258,
+   "cal.alpha_search": 0.1363251000875607,
+   "cal.xform_choice.gram": 0.13414550002198666,
+   "cal.xform_choice.gram_rot": 0.08105700009036809,
+   "cal.alpha_search.quant_fast": 0.07835289998911321,
+   "cal.alpha_search.eval": 0.04836079990491271,
+   "cal.actgptq.eval": 0.038249899982474744,
+   "cal.actgptq.anchor_quant": 0.02940530003979802,
+   "cal.dequant": 0.023529099998995662,
+   "cal.q_used_flatten": 0.02324030001182109,
+   "cal.weight_rot": 0.016033600084483624
+  },
+  "calib_identical": true,
+  "dynamic": [
+   {
+    "T": 10,
+    "wall_orig": 0.45227179990615696,
+    "wall_instr": 0.39160830003675073,
+    "phases": {
+     "dyn.dequant": 0.0028388999635353684,
+     "dyn.quant": 0.008228100021369755,
+     "dyn.gptq": 0.3798491000197828,
+     "dyn.encode": 0.0005777999758720398
+    },
+    "identical": true
+   },
+   {
+    "T": 128,
+    "wall_orig": 0.452881500008516,
+    "wall_instr": 0.4483544999966398,
+    "phases": {
+     "dyn.dequant": 0.0026528999442234635,
+     "dyn.quant": 0.02750740002375096,
+     "dyn.gptq": 0.4169555000262335,
+     "dyn.encode": 0.0011134000960737467
+    },
+    "identical": true
+   },
+   {
+    "T": 512,
+    "wall_orig": 0.6915260999230668,
+    "wall_instr": 0.6821414000587538,
+    "phases": {
+     "dyn.dequant": 0.005063700024038553,
+     "dyn.quant": 0.10813429998233914,
+     "dyn.gptq": 0.5647571999579668,
+     "dyn.encode": 0.0031476999865844846
+    },
+    "identical": true
+   },
+   {
+    "T": 1024,
+    "wall_orig": 1.0377378000412136,
+    "wall_instr": 1.0157058000331745,
+    "phases": {
+     "dyn.dequant": 0.011634800001047552,
+     "dyn.quant": 0.30484490003436804,
+     "dyn.gptq": 0.6921309001045302,
+     "dyn.encode": 0.006951699964702129
+    },
+    "identical": true
+   },
+   {
+    "T": 1024,
+    "wall_orig": 1.017919100006111,
+    "wall_instr": 1.0202592000132427,
+    "phases": {
+     "dyn.dequant": 0.010226199985481799,
+     "dyn.quant": 0.30188939999789,
+     "dyn.gptq": 0.700198300066404,
+     "dyn.encode": 0.007813000003807247
+    },
+    "identical": true
+   }
+  ]
+ },
+ {
+  "name": "c4096_n8192",
+  "C": 4096,
+  "N": 8192,
+  "threads": 10,
+  "calib_wall_orig": 10.954665699973702,
+  "calib_wall_instr": 11.045742899994366,
+  "calib_phases": {
+   "cal.weight_gptq": 4.001233299961314,
+   "cal.weight_quant": 2.6755400000838563,
+   "cal.xform_choice": 2.1827725999755785,
+   "cal.xform_choice.proxy": 1.300766700063832,
+   "cal.xform_choice.chol": 0.6478750000242144,
+   "cal.actgptq.gram": 0.5495765000814572,
+   "cal.actgptq.gptq": 0.49176150001585484,
+   "cal.actgptq.order": 0.36533229995984584,
+   "cal.actgptq.chol": 0.3442588000325486,
+   "cal.xform_choice.gram": 0.15984660002868623,
+   "cal.alpha_search": 0.12645889993291348,
+   "cal.actgptq.eval": 0.10114449996035546,
+   "cal.alpha_search.quant_fast": 0.07136930001433939,
+   "cal.xform_choice.gram_rot": 0.07074350002221763,
+   "cal.q_used_flatten": 0.054144500056281686,
+   "cal.alpha_search.eval": 0.042170300148427486,
+   "cal.dequant": 0.036440699943341315,
+   "cal.weight_rot": 0.030550400028005242,
+   "cal.actgptq.anchor_quant": 0.029828300001099706
+  },
+  "calib_identical": true,
+  "dynamic": [
+   {
+    "T": 10,
+    "wall_orig": 0.4773603000212461,
+    "wall_instr": 0.3731256000464782,
+    "phases": {
+     "dyn.dequant": 0.002646600012667477,
+     "dyn.quant": 0.008906800067052245,
+     "dyn.gptq": 0.3611131999641657,
+     "dyn.encode": 0.00037130003329366446
+    },
+    "identical": true
+   },
+   {
+    "T": 128,
+    "wall_orig": 0.4533584000309929,
+    "wall_instr": 0.45243929990101606,
+    "phases": {
+     "dyn.dequant": 0.003355200053192675,
+     "dyn.quant": 0.02596929995343089,
+     "dyn.gptq": 0.4216340999118984,
+     "dyn.encode": 0.0010062999790534377
+    },
+    "identical": true
+   },
+   {
+    "T": 512,
+    "wall_orig": 0.6789185999659821,
+    "wall_instr": 0.6628892000298947,
+    "phases": {
+     "dyn.dequant": 0.006002899957820773,
+     "dyn.quant": 0.11140789999626577,
+     "dyn.gptq": 0.5400821000803262,
+     "dyn.encode": 0.002999400021508336
+    },
+    "identical": true
+   },
+   {
+    "T": 1024,
+    "wall_orig": 1.038370400085114,
+    "wall_instr": 1.054373100050725,
+    "phases": {
+     "dyn.dequant": 0.010490000015124679,
+     "dyn.quant": 0.3073811000213027,
+     "dyn.gptq": 0.7275568000040948,
+     "dyn.encode": 0.007927600061520934
+    },
+    "identical": true
+   },
+   {
+    "T": 1024,
+    "wall_orig": 1.081311900052242,
+    "wall_instr": 1.052646700059995,
+    "phases": {
+     "dyn.dequant": 0.011706799967214465,
+     "dyn.quant": 0.30898709991015494,
+     "dyn.gptq": 0.7242756999330595,
+     "dyn.encode": 0.007125200005248189
+    },
+    "identical": true
+   }
+  ]
+ },
+ {
+  "name": "attn_mini",
+  "qh": 16,
+  "kvh": 2,
+  "dh": 256,
+  "calib_wall_orig": 1.370435200049542,
+  "calib_wall_instr": 1.304848099942319,
+  "calib_phases": {
+   "acal.gq_guard": 0.8755396000342444,
+   "acal.rot_choice": 0.34888380009215325,
+   "acal.hess": 0.03689500002656132,
+   "acal.hold_ref": 0.03160380001645535,
+   "acal.dequant_hold": 0.005304999998770654,
+   "acal.chol": 0.004316300037316978
+  },
+  "dynamic": [
+   {
+    "T": 10,
+    "wall_orig": 0.07736450002994388,
+    "wall_instr": 0.07093049993272871,
+    "phases": {
+     "dq.dequant": 0.00041229999624192715,
+     "dq.quant": 0.006693699979223311,
+     "dq.gptq": 0.02777409995906055,
+     "dk.dequant": 0.00015410000924021006,
+     "dk.quant": 0.003616199945099652,
+     "dk.gptq": 0.025736299925483763,
+     "dv.dequant": 7.1900081820786e-05,
+     "dv.compensate": 0.006304200040176511
+    },
+    "identical": true
+   },
+   {
+    "T": 128,
+    "wall_orig": 0.15337170008569956,
+    "wall_instr": 0.19210999994538724,
+    "phases": {
+     "dq.dequant": 0.0014865000266581774,
+     "dq.quant": 0.028819200000725687,
+     "dq.gptq": 0.08227589994203299,
+     "dk.dequant": 0.0004534999607130885,
+     "dk.quant": 0.010924500063993037,
+     "dk.gptq": 0.031067200005054474,
+     "dv.dequant": 0.0004002000205218792,
+     "dv.compensate": 0.036400699988007545
+    },
+    "identical": true
+   },
+   {
+    "T": 512,
+    "wall_orig": 0.38949770003091544,
+    "wall_instr": 0.3919005999341607,
+    "phases": {
+     "dq.dequant": 0.004863700014539063,
+     "dq.quant": 0.11911940004210919,
+     "dq.gptq": 0.11365259997546673,
+     "dk.dequant": 0.0014320999616757035,
+     "dk.quant": 0.017254500067792833,
+     "dk.gptq": 0.043220299994573,
+     "dv.dequant": 0.00036669999826699495,
+     "dv.compensate": 0.07193380000535399,
+     "dv.table": 0.017919700010679662
+    },
+    "identical": true
+   },
+   {
+    "T": 1024,
+    "wall_orig": 1.215526699903421,
+    "wall_instr": 1.2051769000245258,
+    "phases": {
+     "dq.dequant": 0.009228600072674453,
+     "dq.quant": 0.28964580001775175,
+     "dq.gptq": 0.27715699991676956,
+     "dk.dequant": 0.001804900006391108,
+     "dk.quant": 0.03149969992227852,
+     "dk.gptq": 0.05551920004654676,
+     "dv.dequant": 0.00047969992738217115,
+     "dv.compensate": 0.5056882000062615,
+     "dv.table": 0.030200300039723516
+    },
+    "identical": true
+   },
+   {
+    "T": 1024,
+    "wall_orig": 1.2196965999901295,
+    "wall_instr": 1.1943555999314412,
+    "phases": {
+     "dq.dequant": 0.010213700006715953,
+     "dq.quant": 0.29881009995006025,
+     "dq.gptq": 0.26308679999783635,
+     "dk.dequant": 0.0014413000317290425,
+     "dk.quant": 0.02665400004480034,
+     "dk.gptq": 0.053745999932289124,
+     "dv.dequant": 0.0005386999109759927,
+     "dv.compensate": 0.5040723000420257,
+     "dv.table": 0.030304200015962124
+    },
+    "identical": true
+   }
+  ]
+ }
+]

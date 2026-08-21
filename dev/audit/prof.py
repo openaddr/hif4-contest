@@ -42,6 +42,8 @@ MINI_ATTN = os.path.join(ROOT, "example", "mini_sample", "attn.pt")
 CONFIGS = [
     ("c1024_n1024", 1024, 1024, (10, 128, 512, 1024), (10, 128, 512, 1024, 1024)),
     ("c2048_n8192", 2048, 8192, (10, 128, 512, 1024), (10, 128, 512, 1024, 1024)),
+    ("c4096_n4096", 4096, 4096, (10, 128, 512, 1024), (10, 128, 512, 1024, 1024)),
+    ("c4096_n8192", 4096, 8192, (10, 128, 512, 1024), (10, 128, 512, 1024, 1024)),
     ("c8192_n8192", 8192, 8192, (10, 128, 512, 1024), (10, 128, 512, 1024, 1024)),
 ]
 
@@ -136,19 +138,21 @@ def verify_phases(names=None):
     ai = solp.hif4_calibration_attention(att["calib"], qh, kvh, dh)
     oka = json.dumps({k: str(v) for k, v in ao.items()}, sort_keys=True) == \
         json.dumps({k: str(v) for k, v in ai.items()}, sort_keys=True)
+    dyn_ok = True
     for smp in att["test"]:
-        for role, fn_o, fn_i, st in (
-                ("q", sol.hif4_dynamic_quantize_q, solp.hif4_dynamic_quantize_q, ao["q_state"]),
-                ("k", sol.hif4_dynamic_quantize_k, solp.hif4_dynamic_quantize_k, ao["k_state"]),
-                ("v", sol.hif4_dynamic_quantize_v, solp.hif4_dynamic_quantize_v, ao["v_state"])):
-            fn_o = getattr(sol, f"hif4_dynamic_quantize_{role}")
-            fn_i = getattr(solp, f"hif4_dynamic_quantize_{role}")
-            solp._QKV_CARRY.clear()
-            # replay q,k,v in order through both (v-compensation reads carry)
-            for r2 in ("q", "k", "v"):
-                pass
-    print(f"[verify] attn(mini): calibration {'IDENTICAL' if oka else 'MISMATCH'}")
-    return ok_all and oka
+        # replay q,k,v in order through both (v-compensation reads the carry)
+        sol._QKV_CARRY.clear()
+        po = [sol.hif4_dynamic_quantize_q(smp["q"][0], smp["q"][1], qh, dh, ao["q_state"]),
+              sol.hif4_dynamic_quantize_k(smp["k"][0], smp["k"][1], kvh, dh, ao["k_state"]),
+              sol.hif4_dynamic_quantize_v(smp["v"][0], smp["v"][1], kvh, dh, ao["v_state"])]
+        solp._QKV_CARRY.clear()
+        pi = [solp.hif4_dynamic_quantize_q(smp["q"][0], smp["q"][1], qh, dh, ai["q_state"]),
+              solp.hif4_dynamic_quantize_k(smp["k"][0], smp["k"][1], kvh, dh, ai["k_state"]),
+              solp.hif4_dynamic_quantize_v(smp["v"][0], smp["v"][1], kvh, dh, ai["v_state"])]
+        dyn_ok = dyn_ok and all(_eq_params(a, b) for a, b in zip(po, pi))
+    print(f"[verify] attn(mini): calibration {'IDENTICAL' if oka else 'MISMATCH'}, "
+          f"dynamic {'IDENTICAL' if dyn_ok else 'MISMATCH'}")
+    return ok_all and oka and dyn_ok
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +163,7 @@ def time_config(name, sol=None, solp=None):
     sol = sol or get_sol()
     solp = solp or get_solp()
     C, N = {"c1024_n1024": (1024, 1024), "c2048_n8192": (2048, 8192),
+            "c4096_n4096": (4096, 4096), "c4096_n8192": (4096, 8192),
             "c8192_n8192": (8192, 8192)}[name]
     g = load_group(name)
     res = {"name": name, "C": C, "N": N, "threads": torch.get_num_threads()}
