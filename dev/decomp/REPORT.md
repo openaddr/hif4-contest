@@ -34,8 +34,7 @@ weight side dominates at small C. Ship hash parity: 1/8 C=4096 groups even.
 mean 0.30-0.34, p50 0.27-0.32, p90 0.51-0.62; 80-89% of blocks < 0.5; the
 prior moves 98-100% of anchors at beta>=0.5. The 10-token block max sits ~3x
 below the calib max - harmless today: the quantizer anchors per row, every
-row-block max is representable at its own anchor, so there is no clipping
-benefit to trade against grid coarseness.
+row-block max is representable at its own anchor, no clipping to trade.
 
 ## Beta sweep (score delta pp vs refined control; 32 groups)
 | beta | dT10   | dT128  | dT512  | dT1024 | worst case |
@@ -44,10 +43,9 @@ benefit to trade against grid coarseness.
 | 0.7  | -120.5 | -46.2  | -28.0  | -23.4  | -1517      |
 | 1.0  | -203.1 | -85.5  | -54.2  | -47.2  | -2227      |
 per-C dT10 @beta=.5: C512 -335, C1024 -17, C2048 -3.4, C4096 +0.25 (noise).
-Uniformly negative: per-token scale (randn(T,1) gains) makes the pooled
-calib block max ~3x a typical row's absmax; the raised anchor multiplies sf
-(grid step) for nearly every row-block with no offsetting gain. C=512 is hit
-hardest (fewest channels, smallest weight-err share).
+Uniformly negative: per-token scale (randn(T,1) gains) makes the pooled calib
+block max ~3x a typical row's absmax; the raised anchor multiplies sf (grid
+step) for nearly every row-block with no offsetting gain; C=512 hit hardest.
 
 ## VERDICT: NO-SHIP the calib block-absmax sf-prior
 Online value (250 cases = 50 grp x [1xT10,1xT128,1xT512,2xT1024]): beta .5
