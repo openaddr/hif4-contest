@@ -177,3 +177,8 @@
 - artifact: dist/solution_v20.zip
 - note: v20 = v19 + timing bundle (bit-identical, ~29s online est) + E3 weight refinement restored at C<=2048 (rev1 placement). E3 measured on current tree: diag3 +7.2390->+7.2478 (+0.0088pp mini, est +50-150 online - overlaps act-refinement), cost +5s local/C2048-group (~15-28s online, eats most of the bundle margin; worst-case total ~= v19's proven 262s). Readouts from this submission: score delta = E3 value; runtime = bundle savings - E3 cost
 
+
+## v20 readout + probe_c4096 - 2026-08-22
+- v20 online: 23815 @226s = NEW BANK. E3 online value = +61 (low end of +50-150, consistent with act-refinement overlap). Timing: 226s vs v19 262s = -36s -> bundle saves MORE than the 29s extrapolation (or E3 costs less); ~70s margin at current load. Timing crisis over
+- probe_c4096.zip built: hash-even 2048<C<=4096 groups carry bf16 grams (128MiB total state) + refine; hash-odd stay v20 path; E3 stays C<=2048 (pure carry test). Verified: seed200 even -> carry 128MiB + refinement fires; seed201 odd -> 64MiB u_act only, zero refinement; mainline diag3 untouched +7.2478; self_check 22/22
+- decode: no new WA -> envelope >=128MiB -> v21 full C=4096 extension (+300-900); ~3 new WA -> envelope <128 -> 96MiB variant (u_act bf16) or low-rank Gram; 6 new WA -> hard cap near 64MiB. Est timing +10-15s, fits margin
