@@ -1,11 +1,11 @@
 # Decomposition study: where the remaining linear error lives (v21)
 
-32 synthetic linear groups (dev/synth.py): {C}x{N}x{spread}x{outlier_p} =
-{512,1024,2048,4096}x{1024,8192}x{0.5,0.9}x{0,0.002}; calib T=(10,128,512,
-1024), test T=(10,128,512,1024,1024); calib/test share channel gains.
-Scoring mirrors dev/diag3.py (baseline = exact paper Alg.1). refined = lattice
-forced at all C (hash-even branch, REFINE_MAX_C=1e9); unrefined = v14 path.
-beta=0 parity of the anchored quantizer twins: bit-identical on all 32 groups.
+32 synthetic linear groups (dev/synth.py): {512,1024,2048,4096}x{1024,8192}x
+{0.5,0.9}x{0,0.002} (CxNxspread xoutlier_p); calib T=(10,128,512,1024), test
+T=(10,128,512,1024,1024); calib/test share channel gains. Score mirrors
+dev/diag3.py (baseline = exact paper Alg.1). refined = lattice forced at all
+C (hash-even branch, REFINE_MAX_C=1e9); unrefined = v14 path. beta=0 parity
+of the anchored quantizer twins: bit-identical on all 32 groups.
 
 ## Table i - score (pp) by test-T bucket (32 groups)
 | T    | refined | unrefined |
@@ -30,16 +30,16 @@ drops 5->2 at T=1024 (_refine_act_values). Probe (probe_sweeps.py, 8 groups):
 
 Score rises with C; residual error largest at small C (C=512: player MSE
 still 54% of std). Lattice refinement is worth ~14-16pp at EVERY C.
-Attribution (refined, mse_act/mse_w): 0.76 @C512 -> ~1.0 @C>=2048: act and
-weight error are equal co-contributors; weight side dominates at small C.
+Attribution (mse_act/mse_w): 0.76 @C512 -> ~1.0 @C>=2048: act and weight
+error are equal co-contributors; weight side dominates at small C.
 Ship hash parity: only 1/8 C=4096 groups is even.
 
 ## T=10 anchor stats (max(test_absmax)/calib_block_max, transformed space)
 mean 0.30-0.34, p50 0.27-0.32, p90 0.51-0.62; 80-89% of blocks < 0.5; the
-prior would move 98-100% of anchors at beta>=0.5. The 10-token block max
-sits ~3x below the calib max - harmless today because the quantizer anchors
-per row: every row-block max is representable at its own anchor, so there is
-no clipping benefit to trade against grid coarseness.
+prior moves 98-100% of anchors at beta>=0.5. The 10-token block max sits ~3x
+below the calib max - harmless today because the quantizer anchors per row:
+every row-block max is representable at its own anchor, so there is no
+clipping benefit to trade against grid coarseness.
 
 ## Beta sweep (score delta pp vs refined control; 32 groups)
 | beta | dT10   | dT128  | dT512  | dT1024 | worst case |
@@ -49,15 +49,15 @@ no clipping benefit to trade against grid coarseness.
 | 1.0  | -203.1 | -85.5  | -54.2  | -47.2  | -2227      |
 
 per-C dT10 @beta=.5: C512 -335, C1024 -17, C2048 -3.4, C4096 +0.25 (noise).
-Uniformly negative. Mechanism: per-token scale (randn(T,1) gains) makes the
-pooled per-block calib max ~3x a typical row's absmax; the raised anchor
-multiplies sf (grid step) for nearly every row-block with no offsetting gain.
-C=512 is hit hardest (fewest channels, smallest weight-err share).
+Uniformly negative: per-token scale (randn(T,1) gains) makes the pooled
+per-block calib max ~3x a typical row's absmax; the raised anchor multiplies
+sf (grid step) for nearly every row-block with no offsetting gain. C=512 is
+hit hardest (fewest channels, smallest weight-err share).
 
 ## VERDICT: NO-SHIP the calib block-absmax sf-prior
-Expected online value (250 cases = 50 grp x [1xT10,1xT128,1xT512,2xT1024]):
-beta .5 -> -8.5k pp, .7 -> -12.1k pp, 1.0 -> -21.9k pp. No beta in
-{0.5,0.7,1.0} is shippable; the small-T-anchor premise is empirically false.
+Online value (250 cases = 50 grp x [1xT10,1xT128,1xT512,2xT1024]): beta .5
+-> -8.5k pp, .7 -> -12.1k pp, 1.0 -> -21.9k pp. No beta in {0.5,0.7,1.0} is
+shippable; the small-T-anchor premise is empirically false.
 
 ## Actionable instead (measured here)
 1. T=1024 sweep cap 2->5: +6.2pp/case mean => ~+620pp online (100 calls),
