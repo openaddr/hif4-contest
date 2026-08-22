@@ -195,3 +195,8 @@
 - artifact: dist/solution_v22.zip
 - note: v22 = v21 + T=1024 sweep equalization 2->5 (C<=2048; C>2048 stays T<=512-capped). Decomposition study finding: T=1024 was the worst bucket purely from the sweep cap; synthetic mean +6.2pp/case, mini +0.0116pp (v21 +7.2478 -> +7.2594), online estimate +60..+400. Cost +12s online (R1024 call 1.2->2.2s local). Beta sf-prior NO-SHIPed (premise false: T=10 is the BEST bucket, per-row anchoring already handles small T; sweep was uniformly negative -9k..-22k pp)
 
+
+## v21/v22 readouts - 2026-08-22
+- v21: 23847 @254s (vs probe 23885: -38 = E3@4096 ~0 + T-cap gave back ~-30-40 of C4096 R1024 refinement value; restore candidate at +7s). Best remains 23885 (best-counts)
+- v22: 24019 @248s = NEW BEST. T=1024 sweep equalization (2->5, C<=2048) paid +172 (+1.72pp/case online vs mini's +0.006 prediction -- MINI IS BLIND on the sweep axis, converged data) vs synthetic +6.2pp/case -> synthetic-to-judge transfer ~0.28x. SWEEP DEPTH AXIS REOPENED: T<=512 buckets stuck at 5 sweeps since v16, 5->8->12 untested on synthetic; rounds 20->40 untested; E3 sweeps 1->2->3 at small C untested (weight error dominates at C=512, attribution 0.76)
+- sweep-curves agent launched (reuses dev/decomp harness). Budget: 248s + ~50s margin
