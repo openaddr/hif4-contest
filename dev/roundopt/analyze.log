@@ -1,0 +1,40 @@
+c1024_n1024_s0.5_o0.0.pt: 5 calls OK
+c1024_n1024_s0.5_o0.002.pt: 5 calls OK
+c1024_n1024_s0.5_o0.002_b.pt: 5 calls OK
+c1024_n1024_s0.5_o0.0_b.pt: 5 calls OK
+c1024_n1024_s0.9_o0.0.pt: 5 calls OK
+c1024_n1024_s0.9_o0.002.pt: 5 calls OK
+c1024_n1024_s0.9_o0.002_b.pt: 5 calls OK
+c1024_n1024_s0.9_o0.0_b.pt: 5 calls OK
+c1024_n8192_s0.5_o0.0.pt: 5 calls OK
+c1024_n8192_s0.5_o0.002.pt: 5 calls OK
+c1024_n8192_s0.5_o0.002_b.pt: 5 calls OK
+c1024_n8192_s0.5_o0.0_b.pt: 5 calls OK
+c1024_n8192_s0.9_o0.0.pt: 5 calls OK
+c1024_n8192_s0.9_o0.002.pt: 5 calls OK
+c1024_n8192_s0.9_o0.002_b.pt: 5 calls OK
+c1024_n8192_s0.9_o0.0_b.pt: 5 calls OK
+c2048_n1024_s0.5_o0.0.pt: 5 calls OK
+c2048_n1024_s0.5_o0.002.pt: 5 calls OK
+c2048_n1024_s0.5_o0.002_b.pt: 5 calls OK
+c2048_n1024_s0.5_o0.0_b.pt: 5 calls OK
+c2048_n1024_s0.9_o0.0.pt: 5 calls OK
+c2048_n1024_s0.9_o0.002.pt: 5 calls OK
+c2048_n1024_s0.9_o0.002_b.pt: 5 calls OK
+c2048_n1024_s0.9_o0.0_b.pt: 5 calls OK
+c2048_n8192_s0.5_o0.0.pt: 5 calls OK
+c2048_n8192_s0.5_o0.002.pt: 5 calls OK
+c2048_n8192_s0.5_o0.002_b.pt: 5 calls OK
+c2048_n8192_s0.5_o0.0_b.pt: 5 calls OK
+c2048_n8192_s0.9_o0.0.pt: 5 calls OK
+c2048_n8192_s0.9_o0.002.pt: 5 calls OK
+c2048_n8192_s0.9_o0.002_b.pt: 5 calls OK
+c2048_n8192_s0.9_o0.0_b.pt: 5 calls OK
+
+TOTAL 160 calls: replica==ship, freeze-prefix OK, active-twin flip-sequence + output bit-identical
+
+per-tier active-row-rounds (torch path):
+     T  rounds  calls   full=T*R     active    frac
+   128     640     32      81920    1771898 2163.0%
+   512     280     32     143360    4215161 2940.3%
+  1024     120     64     122880    7863749 6399.5%
