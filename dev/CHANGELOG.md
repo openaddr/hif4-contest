@@ -238,3 +238,8 @@
 ## v27/v28/v29 readouts - 2026-08-22/23
 - v27: 24656 @231s (+159, good window). v28: 24739 @262s (+83). v29: 24794 @271s (+55, C4096-R1024 restore + tiers 24/12/5). Sweep axis CLOSED: +478 -> +159 -> +83 -> +55 asymptote. Remaining family tail ~+60-90 (T1024->6 + tiers 26/14) for +8-9s, night-window only -- optional final free roll
 - decomp2 agent launched: fresh residual anatomy on current config (act/w/lattice-converged/grid-lock split, grid-re-anchor upper bound at calibration, unrefined population gaps: hash-odd C4096 / R>1024 calls / C=8192 never-refined). Also incident log: v28 commit was killed by my backgrounded git chain + watchdog -- git ops now FOREGROUND ONLY with origin/main log verification (standing rule amended)
+
+## leaderboard intel + P-proxy lead - 2026-08-23
+- leaderboard: #1 26724 @286s (riding the ~288 ceiling -- time-to-score maxed), #2 26414 @234s (same runtime as our v27 231s but +1758 -- their edge is a MECHANISM, not compute). We: 24794, gaps 1620/1930
+- KEY COINCIDENCE: the attn exact-P oracle (+7.4-7.8pp/case ~ +1850-1950 online) matches the gap almost exactly. The 'unshippable' verdict assumed P needs test q/k; UNTESTED middle ground: calib-fitted P proxy. Structural enabler: calib and test use the SAME R values, so per-R P^T P Grams can be carried (~2.3MiB bf16, inside envelope). Flat-P was catastrophic but data-FITTED P with 0.70-0.78 calib/test correlation could capture half the oracle (+900-1000). pproxy agent launched: 3 proxy variants x 3 data regimes (same-seed/realistic/shifted) vs oracle on mini+synthetic
+- decomp2 agent also running (residual anatomy + grid-re-anchor upper bound)
