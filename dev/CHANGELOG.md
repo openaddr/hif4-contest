@@ -243,3 +243,7 @@
 - leaderboard: #1 26724 @286s (riding the ~288 ceiling -- time-to-score maxed), #2 26414 @234s (same runtime as our v27 231s but +1758 -- their edge is a MECHANISM, not compute). We: 24794, gaps 1620/1930
 - KEY COINCIDENCE: the attn exact-P oracle (+7.4-7.8pp/case ~ +1850-1950 online) matches the gap almost exactly. The 'unshippable' verdict assumed P needs test q/k; UNTESTED middle ground: calib-fitted P proxy. Structural enabler: calib and test use the SAME R values, so per-R P^T P Grams can be carried (~2.3MiB bf16, inside envelope). Flat-P was catastrophic but data-FITTED P with 0.70-0.78 calib/test correlation could capture half the oracle (+900-1000). pproxy agent launched: 3 proxy variants x 3 data regimes (same-seed/realistic/shifted) vs oracle on mini+synthetic
 - decomp2 agent also running (residual anatomy + grid-re-anchor upper bound)
+
+## ceiling correction - 2026-08-23
+- user reports a leaderboard entry at 292s -> the "~288 ceiling" inference was WRONG; the limit is 300s as stated. The triple-timeout postmortem's revised safety line (265 good-window) was ~10-15s too conservative; all three timeouts remain consistent with true runtime >=300 under their load windows
+- tactical unlock: good-window budget to ~280-285 true-cost (15-20s bad-minute buffer). #1 at 286 and the 292s entry show ~290 true-cost passes. v29 true-cost ~248-250 good-window -> +30-40s available: v30 deep tail (T<=256->32, T512->14, T1024->6, +15-18s, night-only, est +65-100) now back on the table; queued behind pproxy/decomp2 results
