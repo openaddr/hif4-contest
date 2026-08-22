@@ -1,0 +1,80 @@
+
+=== mini: qh=16 kvh=2 dh=256 C=512 calib 2.8s  R-match(test in calib)=True cal_R=[10, 128, 512, 1024] test_R=[10, 128, 512, 1024]
+[mini judge t0] T=10 base=+0.4711 | single:-1.15  meanP:-1.15  EptP:-1.15 pp | oracle6:+6.39pp | gcos single=0.86 meanP=0.86 EptP=0.86
+[mini judge t1] T=128 base=+0.4347 | single:-1.66  meanP:-1.66  EptP:-1.66 pp | oracle6:+6.15pp | gcos single=0.76 meanP=0.76 EptP=0.76
+[mini judge t2] T=512 base=+0.5322 | single:-2.33  meanP:-2.33  EptP:-2.33 pp | oracle6:+7.89pp | gcos single=0.59 meanP=0.59 EptP=0.59
+[mini judge t3] T=1024 base=+0.5480 | single:-3.68  meanP:-3.68  EptP:-3.68 pp | oracle6:+9.40pp | gcos single=0.49 meanP=0.49 EptP=0.49
+[mini judge t4] T=1024 base=+0.5601 | single:-2.11  meanP:-2.11  EptP:-2.11 pp | oracle6:+9.19pp | gcos single=0.58 meanP=0.58 EptP=0.58
+
+=== synA: qh=16 kvh=2 dh=256 C=512 calib 2.6s  R-match(test in calib)=True cal_R=[10, 128, 512, 1024] test_R=[10, 128, 512, 1024]
+[synA same t0] T=10 base=+0.1893 | single:+4.97  meanP:+4.97  EptP:+4.97 pp | oracle6:+5.04pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synA same t1] T=128 base=+0.2557 | single:+1.19  meanP:+1.19  EptP:+1.19 pp | oracle6:+1.20pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synA same t2] T=512 base=+0.2579 | single:+0.60  meanP:+0.60  EptP:+0.60 pp | oracle6:+0.61pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synA same t3] T=1024 base=+0.2827 | single:+0.29  meanP:+0.29  EptP:+0.29 pp | oracle6:+0.27pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synA same t4] T=1024 base=+0.2080 | single:-15.77  meanP:-15.77  EptP:-15.77 pp | oracle6:+0.32pp | gcos single=0.01 meanP=0.01 EptP=0.01
+[synA diff t0] T=10 base=+0.0618 | single:+8.64  meanP:+8.64  EptP:+8.64 pp | oracle6:+12.15pp | gcos single=0.94 meanP=0.94 EptP=0.94
+[synA diff t1] T=128 base=+0.1627 | single:-2.69  meanP:-2.69  EptP:-2.69 pp | oracle6:+2.04pp | gcos single=0.87 meanP=0.87 EptP=0.87
+[synA diff t2] T=512 base=+0.0906 | single:-4.28  meanP:-4.28  EptP:-4.28 pp | oracle6:+0.86pp | gcos single=0.87 meanP=0.87 EptP=0.87
+[synA diff t3] T=1024 base=+0.2497 | single:-6.68  meanP:-6.68  EptP:-6.68 pp | oracle6:+0.37pp | gcos single=0.92 meanP=0.92 EptP=0.92
+[synA diff t4] T=1024 base=+0.2070 | single:-17.49  meanP:-17.49  EptP:-17.49 pp | oracle6:+0.43pp | gcos single=0.02 meanP=0.02 EptP=0.02
+[synA shift t0] T=10 base=+0.4515 | single:-4.71  meanP:-4.71  EptP:-4.71 pp | oracle6:+1.17pp | gcos single=0.68 meanP=0.68 EptP=0.68
+[synA shift t1] T=128 base=+0.2594 | single:-40.29  meanP:-40.29  EptP:-40.29 pp | oracle6:+0.24pp | gcos single=0.07 meanP=0.07 EptP=0.07
+[synA shift t2] T=512 base=+0.2375 | single:-13.05  meanP:-13.05  EptP:-13.05 pp | oracle6:+0.13pp | gcos single=0.02 meanP=0.02 EptP=0.02
+[synA shift t3] T=1024 base=+0.2916 | single:-10.85  meanP:-10.85  EptP:-10.85 pp | oracle6:+0.02pp | gcos single=0.01 meanP=0.01 EptP=0.01
+[synA shift t4] T=1024 base=+0.2642 | single:-15.09  meanP:-15.09  EptP:-15.09 pp | oracle6:+0.04pp | gcos single=0.01 meanP=0.01 EptP=0.01
+
+=== synB: qh=8 kvh=8 dh=128 C=1024 calib 2.3s  R-match(test in calib)=True cal_R=[128, 512, 1024] test_R=[128, 512, 1024]
+[synB same t0] T=128 base=+0.2075 | single:+2.03  meanP:+0.44  EptP:+1.72 pp | oracle6:+1.89pp | gcos single=0.99 meanP=0.70 EptP=0.73
+[synB same t1] T=128 base=+0.1360 | single:-144.01  meanP:-0.24  EptP:+1.71 pp | oracle6:+2.38pp | gcos single=0.09 meanP=0.69 EptP=0.73
+[synB same t2] T=512 base=+0.1857 | single:+1.26  meanP:+1.26  EptP:+1.26 pp | oracle6:+1.17pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synB same t3] T=1024 base=+0.1280 | single:+0.74  meanP:+0.74  EptP:+0.74 pp | oracle6:+0.79pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synB same t4] T=1024 base=+0.2500 | single:-36.69  meanP:-36.69  EptP:-36.69 pp | oracle6:+0.78pp | gcos single=0.01 meanP=0.01 EptP=0.01
+[synB diff t0] T=128 base=+0.2353 | single:-33.85  meanP:-24.53  EptP:-10.52 pp | oracle6:+3.12pp | gcos single=0.78 meanP=0.60 EptP=0.63
+[synB diff t1] T=128 base=+0.1193 | single:-289.67  meanP:-39.41  EptP:-15.38 pp | oracle6:+4.26pp | gcos single=0.16 meanP=0.62 EptP=0.65
+[synB diff t2] T=512 base=+0.1644 | single:-21.06  meanP:-21.06  EptP:-21.06 pp | oracle6:+1.69pp | gcos single=0.88 meanP=0.88 EptP=0.88
+[synB diff t3] T=1024 base=+0.2301 | single:-8.67  meanP:-8.67  EptP:-8.67 pp | oracle6:+0.98pp | gcos single=0.87 meanP=0.87 EptP=0.87
+[synB diff t4] T=1024 base=+0.1801 | single:-41.68  meanP:-41.68  EptP:-41.68 pp | oracle6:+1.00pp | gcos single=0.01 meanP=0.01 EptP=0.01
+[synB shift t0] T=128 base=+0.2137 | single:-83.87  meanP:-72.01  EptP:-40.38 pp | oracle6:+0.47pp | gcos single=0.02 meanP=0.07 EptP=0.07
+[synB shift t1] T=128 base=+0.2259 | single:-66.05  meanP:-74.18  EptP:-52.61 pp | oracle6:+0.42pp | gcos single=0.02 meanP=0.06 EptP=0.07
+[synB shift t2] T=512 base=+0.1683 | single:-18.74  meanP:-18.74  EptP:-18.74 pp | oracle6:+0.25pp | gcos single=0.03 meanP=0.03 EptP=0.03
+[synB shift t3] T=1024 base=+0.2044 | single:-30.93  meanP:-30.93  EptP:-30.93 pp | oracle6:+0.13pp | gcos single=0.00 meanP=0.00 EptP=0.00
+[synB shift t4] T=1024 base=+0.1222 | single:-20.61  meanP:-20.61  EptP:-20.61 pp | oracle6:+0.10pp | gcos single=0.02 meanP=0.02 EptP=0.02
+
+=== synC: qh=32 kvh=4 dh=128 C=512 calib 3.3s  R-match(test in calib)=True cal_R=[10, 512, 1024] test_R=[10, 512, 1024]
+[synC same t0] T=10 base=+0.0344 | single:+4.99  meanP:+4.99  EptP:+4.99 pp | oracle6:+4.88pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synC same t1] T=512 base=+0.1826 | single:+0.59  meanP:-0.28  EptP:+0.45 pp | oracle6:+0.62pp | gcos single=1.00 meanP=0.63 EptP=0.64
+[synC same t2] T=512 base=+0.2121 | single:-45.72  meanP:+0.07  EptP:+0.47 pp | oracle6:+0.56pp | gcos single=0.02 meanP=0.76 EptP=0.78
+[synC same t3] T=1024 base=+0.2577 | single:+0.44  meanP:+0.44  EptP:+0.44 pp | oracle6:+0.41pp | gcos single=1.00 meanP=1.00 EptP=1.00
+[synC same t4] T=1024 base=+0.1665 | single:-31.93  meanP:-31.93  EptP:-31.93 pp | oracle6:+0.35pp | gcos single=0.02 meanP=0.02 EptP=0.02
+[synC diff t0] T=10 base=+0.3105 | single:+0.56  meanP:+0.56  EptP:+0.56 pp | oracle6:+2.80pp | gcos single=0.94 meanP=0.94 EptP=0.94
+[synC diff t1] T=512 base=+0.1954 | single:-4.47  meanP:-3.49  EptP:-2.42 pp | oracle6:+1.07pp | gcos single=0.91 meanP=0.59 EptP=0.59
+[synC diff t2] T=512 base=+0.1782 | single:-49.64  meanP:-4.31  EptP:-4.09 pp | oracle6:+1.14pp | gcos single=0.02 meanP=0.64 EptP=0.65
+[synC diff t3] T=1024 base=+0.2108 | single:-5.36  meanP:-5.36  EptP:-5.36 pp | oracle6:+0.68pp | gcos single=0.78 meanP=0.78 EptP=0.78
+[synC diff t4] T=1024 base=+0.2175 | single:-18.61  meanP:-18.61  EptP:-18.61 pp | oracle6:+0.59pp | gcos single=0.03 meanP=0.03 EptP=0.03
+[synC shift t0] T=10 base=+0.1359 | single:-23.49  meanP:-23.49  EptP:-23.49 pp | oracle6:+2.19pp | gcos single=0.26 meanP=0.26 EptP=0.26
+[synC shift t1] T=512 base=+0.3032 | single:-20.63  meanP:-15.70  EptP:-16.21 pp | oracle6:+0.19pp | gcos single=0.02 meanP=0.02 EptP=0.02
+[synC shift t2] T=512 base=+0.1987 | single:-19.69  meanP:-14.48  EptP:-18.81 pp | oracle6:+0.15pp | gcos single=0.02 meanP=0.02 EptP=0.02
+[synC shift t3] T=1024 base=+0.2999 | single:-18.41  meanP:-18.41  EptP:-18.41 pp | oracle6:+0.14pp | gcos single=0.05 meanP=0.05 EptP=0.05
+[synC shift t4] T=1024 base=+0.3042 | single:-8.54  meanP:-8.54  EptP:-8.54 pp | oracle6:+0.14pp | gcos single=0.03 meanP=0.03 EptP=0.03
+
+=== 3x3 summary (dscore pp vs baseline, sw6 / sw2 in brackets; mean over test calls; oracle sw6 = ceiling)
+  same   n=15: single:-17.13( -7.50)  meanP: -4.66( -1.11)  EptP: -4.37( -0.88)  oracle: +1.42
+  diff   n=15: single:-33.00(-11.56)  meanP:-12.60( -4.76)  EptP: -9.98( -3.75)  oracle: +2.21
+  shift  n=15: single:-26.33(-10.03)  meanP:-25.41( -9.98)  EptP:-22.18( -9.42)  oracle: +0.39
+  judge  n= 5: single: -2.19( -0.87)  meanP: -2.19( -0.87)  EptP: -2.19( -0.87)  oracle: +7.80
+
+=== timing per v-call (local CPU)
+  [mini C=512 kvh=2] R=   10  M-init     0.3 ms  refine sw2    22.0 ms  sw6    56.2 ms  state/R 0.00 MiB
+  [mini C=512 kvh=2] R=  128  M-init     0.7 ms  refine sw2   101.6 ms  sw6   304.5 ms  state/R 0.06 MiB
+  [mini C=512 kvh=2] R=  512  M-init     1.8 ms  refine sw2   223.9 ms  sw6   551.5 ms  state/R 1.00 MiB
+  [mini C=512 kvh=2] R= 1024  M-init     4.8 ms  refine sw2   355.4 ms  sw6   973.4 ms  state/R 4.00 MiB
+  [synB C=1024 kvh=8] R=  128  M-init     1.3 ms  refine sw2   249.5 ms  sw6  1936.1 ms  state/R 0.25 MiB
+  [synB C=1024 kvh=8] R=  512  M-init     4.1 ms  refine sw2   525.1 ms  sw6  1355.9 ms  state/R 4.00 MiB
+  [synB C=1024 kvh=8] R= 1024  M-init    14.4 ms  refine sw2  1242.8 ms  sw6  4879.6 ms  state/R 16.00 MiB
+
+=== carried state (bf16 Grams per distinct R)
+  state mini: 5.06 MiB bf16 ([(10, 2), (128, 2), (512, 2), (1024, 2)])
+  state synA: 5.06 MiB bf16 ([(10, 2), (128, 2), (512, 2), (1024, 2)])
+  state synB: 20.25 MiB bf16 ([(128, 8), (512, 8), (1024, 8)])
+  state synC: 10.00 MiB bf16 ([(10, 4), (512, 4), (1024, 4)])
+wrote results.json

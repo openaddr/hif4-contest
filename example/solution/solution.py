@@ -550,6 +550,13 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     if T <= 32:
         # tiny-T: torch round loop is dispatch-bound; numpy twin is ~3x faster
         _rounds_np(M, v4, d, neg2d, d2col, gw, n_sweeps, REFINE_ROUNDS)
+        # decomp2: outlier groups are not converged at the fixed tier on tiny
+        # inputs; deepen while improving flips remain (cheap at tiny T)
+        for _ in range(8):
+            gchk, _ = _flip_sel(d, M, col2, v4)
+            if not bool((gchk < 0).any()):
+                break
+            _rounds_np(M, v4, d, neg2d, d2col, gw, 1, REFINE_ROUNDS)
         return v4 * d
     bpos = v4 < 7.0           # legality bounds; change only at flipped cols
     bneg = v4 > -7.0
@@ -912,12 +919,18 @@ def hif4_calibration_and_quantize_weight(
     # judge, 192 MiB fails. Hash-even C<=4096 groups carry bf16 grams (128 MiB
     # with u_act); hash-odd and C>4096 stay on the v20 path. Full extension
     # would cost ~+62s online (288s) for +70 -- rejected on timeout risk.
-    _e4 = (C <= REFINE_MAX_C
-           or (C <= 4096 and int(w.double().abs().sum().item() * 1e3) % 2 == 0))
+    # decomp2: forced-refined C=4096 gains ~+26pp/case synthetic; extend the
+    # carry to ALL C<=4096 groups, but cap hash-odd groups at T<=512 (tmax in
+    # the state) to bound the added dynamic cost. E3 stays C<=2048 (its value
+    # at 4096 measured ~0 online in v21).
+    _e4h = int(w.double().abs().sum().item() * 1e3) % 2 == 0
+    _e4 = C <= 4096
+    _tmax = REFINE_T_MAX if (C <= REFINE_MAX_C or _e4h) else 512
     if _e4:
         try:
-            weight_params, q_used = _refine_weight_values(
-                w_final, q_used, weight_params, acts_s, tf_final)
+            if C <= REFINE_MAX_C:
+                weight_params, q_used = _refine_weight_values(
+                    w_final, q_used, weight_params, acts_s, tf_final)
         except Exception:
             pass
         try:
@@ -939,6 +952,7 @@ def hif4_calibration_and_quantize_weight(
         "order": (order.contiguous() if (gptq_act == 1 and order is not None) else None),
         "gw": gw,
         "gwf": gwf,
+        "tmax": _tmax,
     }
     return {"weight_params": weight_params, "activation_state": activation_state}
 
@@ -983,7 +997,8 @@ def hif4_dynamic_quantize_activation(
             else:
                 values = _gptq_quantize_values(x, unit, u.float())
     # ---- lattice refinement on the final values (transformed space) ----
-    if isinstance(activation_state, dict) and R <= REFINE_T_MAX:
+    if (isinstance(activation_state, dict)
+            and R <= (activation_state.get("tmax") or REFINE_T_MAX)):
         gw = activation_state.get("gw")
         gwf = activation_state.get("gwf")
         if (isinstance(gw, torch.Tensor) and isinstance(gwf, torch.Tensor)

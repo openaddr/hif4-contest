@@ -259,3 +259,7 @@
 ## v30 readout - 2026-08-23
 - v30: 24841 @283s = NEW BEST (+47; sweep curve +478 -> +159 -> +83 -> +55 -> +47 -- axis fully exhausted). 283s pass with 17s margin validates the 300s ceiling and our window pricing (true cost ~265-268 good-window)
 - standings: 24841 vs #2 26414 (gap 1573) / #1 26724 (gap 1883). Attention-P eliminated; remaining hopes: decomp2 (grid-re-anchor bound, C=8192 low-rank revival) or an unknown mechanism class
+## v31 - 2026-08-22 21:19:08
+- artifact: dist/solution_v31.zip
+- note: v31 = v30 + decomp2 pots: (1) C=4096 hash gate REMOVED -- all groups carry bf16 grams, hash-odd capped at T<=512 via per-group tmax in state (synthetic +26pp/case; probe-calibrated online est +60-120); (2) tiny-T adaptive deepening while improving flips remain (outlier groups unconverged at fixed tier, ~170ms/call, est +30-90); (3) E3 restored to C<=2048-only (value at 4096 measured ~0, was silently running there since audit2 restructure, -5s/group). Est total +12-14s -> ~277-282 true good-window. NIGHT WINDOW ONLY. Grid-re-anchor dead (0/24 holdout); C=8192 empty (no such groups on judge)
+
