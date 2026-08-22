@@ -462,7 +462,10 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # sweep curves (synthetic suite, 0.28x judge transfer): no flattening by
     # 12 at any T bucket; s12 pays +321..455 online for +17-29s. Rounds-only
     # changes are bit-identical no-ops (s10 == s5r40) -- raise sweeps only.
-    n_sweeps = 8 if T <= 1024 else 0
+    # v23/v24 timeout postmortem: sweep rounds are MEMORY-BOUND (judge ~2x
+    # local, not 4.8x) -> s5->s8 at T=1024 costs ~22s online, s12 ~55s. Value
+    # per sweep is T-uniform but cost scales with R: spend depth on small T.
+    n_sweeps = 12 if T <= 256 else 8 if T <= 512 else 5
     for _ in range(n_sweeps):
         for _ in range(REFINE_ROUNDS):
             g, dirn = _flip_sel(d, M, col2, v4)

@@ -208,3 +208,7 @@
 - artifact: dist/solution_v24.zip
 - note: v24 = v23 de-risked: n_sweeps 12->8. v23 TIMED OUT: true s12 cost was +37-45s (all-C2048 pricing from the agent's own per-call numbers: T1024 +22s + T<=512 +15s), not the +17-29 blended estimate I quoted -- judge's refined-call population is C2048-heavier. v23 true runtime ~285-293s. s8: worst-case +16s -> ~264s, value +187-251 (0.28x transfer). v24's timing readout recalibrates the true per-sweep price for v25. Banked best unchanged: 24019 (v22)
 
+## v25 - 2026-08-22 16:33:30
+- artifact: dist/solution_v25.zip
+- note: v25 = tiered sweeps after v23/v24 double timeout postmortem: sweep rounds are memory-bound (judge ~2x local, not the 4.8x BLAS factor) -> s5->s8 at T=1024 truly costs ~22s, s12 ~55s. Per-sweep VALUE is T-uniform (agent curves) but COST scales with R -> tiered: T<=256 -> 12 sweeps, T=512 -> 8, T=1024 -> 5 (unchanged). Est +8-9s (total ~256s, v22-class) for +130-200 online. Banked best 24019 (v22). Submit at a low-load window
+
