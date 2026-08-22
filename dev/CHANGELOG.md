@@ -281,3 +281,7 @@
 ## rerank: NO-SHIP at budget; mechanism phase 2 closed 0/3 - 2026-08-23
 - 10x speedup real (2.47s->162ms, x17 mean) but the gain lives in deep per-try re-refinement: at 0.3s only 59% reproduction (C2048 31%); shipped-anyway value +25-85, overlapping v31's free adaptive tiny-T tier. C<=1024 subset fits (79-96%) but only +15-40 -- not worth the integration
 - PHASE 2 FINAL: lrot DEAD, caw DEAD, rerank DEAD-at-budget. Remaining plays: optional night-tier bump (+40-70, rides 283-290 like #1, deepest-window only); guarded free-form smoothing (fitted-class, guard-protected, unknown value); then DEFENSE MODE (new-test-set hardening: heavy-shape timing sim + shifted-distribution regression)
+
+## audit3 launched (user-prompted) - 2026-08-23
+- user asked for code-performance optimization + redundancy cleanup. Confirmed historical baggage: dead V-compensation/carry machinery (lines ~279-284 + _v_compensate, proven inert online since subprocess isolation), possible orphaned _quant_chunk twin, _safe_wgt unused
+- audit3 agent: fresh profile (hypothesis: deep tier rounds now dominate), dead-code runtime cost measurement, new candidates (round-loop fusion at deep tiers, M-init matmul batching, per-call upcast cost, calib holdout dedupe, E3 chunk re-measure). Every 10s saved ~ +40-70 points via the measured tier curve -- savings are now the cheapest score currency
