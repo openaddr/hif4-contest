@@ -263,3 +263,7 @@
 - artifact: dist/solution_v31.zip
 - note: v31 = v30 + decomp2 pots: (1) C=4096 hash gate REMOVED -- all groups carry bf16 grams, hash-odd capped at T<=512 via per-group tmax in state (synthetic +26pp/case; probe-calibrated online est +60-120); (2) tiny-T adaptive deepening while improving flips remain (outlier groups unconverged at fixed tier, ~170ms/call, est +30-90); (3) E3 restored to C<=2048-only (value at 4096 measured ~0, was silently running there since audit2 restructure, -5s/group). Est total +12-14s -> ~277-282 true good-window. NIGHT WINDOW ONLY. Grid-re-anchor dead (0/24 holdout); C=8192 empty (no such groups on judge)
 
+
+## v31 readout + mechanism phase 2 launched - 2026-08-23
+- v31: 24917 @293s = NEW BEST (+76: hash-odd extension + tiny-T adaptive + E3 re-gate). 293 observed on a warm window -> v31's true cost (~277-282) is DEEP-NIGHT-ONLY from here. Gaps: #2 1497 / #1 1807
+- mechanism phase 2 (the deterministic veins are mined out; next points need unexplored mechanisms): (1) LEARNED ROTATION -- data-fitted orthogonal R (SVD/Procrustes on calib) as mode=2 vs fixed Hadamard; judge data is strongly structured (every structure-exploiting mechanism paid 3-7x online); state bf16 8MiB@C2048 (envelope OK); rotation matmul cost ~= current _rot_blocks. est +100-500. (2) GRID RE-RANK slimming for outlier groups (+3.3pp/T10 measured, needs 10x speedup from 2.6-2.9s/call). est +50-150. (3) queued: free-form smoothing scale, calib-usage audit, pair-flips at tiny T
