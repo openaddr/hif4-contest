@@ -285,3 +285,9 @@
 ## audit3 launched (user-prompted) - 2026-08-23
 - user asked for code-performance optimization + redundancy cleanup. Confirmed historical baggage: dead V-compensation/carry machinery (lines ~279-284 + _v_compensate, proven inert online since subprocess isolation), possible orphaned _quant_chunk twin, _safe_wgt unused
 - audit3 agent: fresh profile (hypothesis: deep tier rounds now dominate), dead-code runtime cost measurement, new candidates (round-loop fusion at deep tiers, M-init matmul batching, per-call upcast cost, calib holdout dedupe, E3 chunk re-measure). Every 10s saved ~ +40-70 points via the measured tier curve -- savings are now the cheapest score currency
+
+## audit3 findings (done in main session after 2 agent network deaths) - 2026-08-23
+- profile hypothesis CONFIRMED: refinement rounds ~53% of linear pipeline at current deep tiers (round_hoisted+argmin+elementwise ~=4.8s of 9.1s mini). The remaining optimization (round-loop fusion / lazy flip selection) needs agent-grade surgery
+- chunked numpy GPTQ (4x2048 rows at N=8192): DEAD, torch still wins (1.71 vs 1.88s; bit-identical but no saving)
+- V-compensation 'big fish' was a LOCAL-PROFILE PHANTOM: _dyn_v's guard is correct, _v_compensate NEVER runs online (carry empty); locally/in-self_check it DOES run because same-process q/k/v calls populate the module carry. METHOD CORRECTION: all local attention timings (self_check, stress, agent benches) carry phantom V-comp cost (~1.78s/group dyn locally) -- attention local->online extrapolation has been overestimated. Online dead-code cleanup value = 0
+- net audit3 result: no easy savings found in main session; round-fusion surgery pending agent retry or next session. v32 options unchanged: night-tier ride on EXISTING budget (+40-70, deepest window)
