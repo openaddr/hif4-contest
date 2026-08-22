@@ -200,3 +200,7 @@
 - v21: 23847 @254s (vs probe 23885: -38 = E3@4096 ~0 + T-cap gave back ~-30-40 of C4096 R1024 refinement value; restore candidate at +7s). Best remains 23885 (best-counts)
 - v22: 24019 @248s = NEW BEST. T=1024 sweep equalization (2->5, C<=2048) paid +172 (+1.72pp/case online vs mini's +0.006 prediction -- MINI IS BLIND on the sweep axis, converged data) vs synthetic +6.2pp/case -> synthetic-to-judge transfer ~0.28x. SWEEP DEPTH AXIS REOPENED: T<=512 buckets stuck at 5 sweeps since v16, 5->8->12 untested on synthetic; rounds 20->40 untested; E3 sweeps 1->2->3 at small C untested (weight error dominates at C=512, attribution 0.76)
 - sweep-curves agent launched (reuses dev/decomp harness). Budget: 248s + ~50s margin
+## v23 - 2026-08-22 15:02:53
+- artifact: dist/solution_v23.zip
+- note: v23 = v22 + n_sweeps 5->12 uniform (T<=1024). Sweep-curve study (synthetic, 0.28x judge transfer validated by v22's +172): no flattening by 12, s12 = +321..455 online for +17-29s (248 -> 265-277s). Rounds axis is a no-op (s10==s5r40 bit-identical). E3 stays 1 sweep (synthetic hold-out rejects it 25/25 but judge/mini paid +61 -- synthetic can't reproduce its win condition). C4096-R1024 restore (+30-38 direct, +7s) deferred to v24 pending v23 timing. diag3 +7.2594->+7.2896
+

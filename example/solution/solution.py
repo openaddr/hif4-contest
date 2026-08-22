@@ -459,9 +459,10 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     M = (v4 * d) @ gw - x @ gwf
     # T-adaptive sweep depth (only T <= REFINE_T_MAX reaches here)
     T = values.shape[0]
-    # decomp study: T=1024 was the worst bucket purely from the sweep cap
-    # (2 vs 5 sweeps); equalize to 5 (agent-measured +6.2pp/case synthetic)
-    n_sweeps = 5 if T <= 1024 else 0
+    # sweep curves (synthetic suite, 0.28x judge transfer): no flattening by
+    # 12 at any T bucket; s12 pays +321..455 online for +17-29s. Rounds-only
+    # changes are bit-identical no-ops (s10 == s5r40) -- raise sweeps only.
+    n_sweeps = 12 if T <= 1024 else 0
     for _ in range(n_sweeps):
         for _ in range(REFINE_ROUNDS):
             g, dirn = _flip_sel(d, M, col2, v4)
