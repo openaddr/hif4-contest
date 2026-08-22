@@ -1,0 +1,58 @@
+A. function gate: 160/160 patched==ship refine calls torch.equal OK
+B. synthetic groups (calibrate both, compare everything):
+  c1024_n1024_s0.5_o0.0 T=   10: ship     78.9ms patched     55.2ms  (1.43x)
+  c1024_n1024_s0.5_o0.0 T=  128: ship    517.1ms patched    216.0ms  (2.39x)
+  c1024_n1024_s0.5_o0.0 T=  512: ship    525.4ms patched    460.4ms  (1.14x)
+  c1024_n1024_s0.5_o0.0 T= 1024: ship    610.6ms patched    475.2ms  (1.28x)
+  c1024_n1024_s0.5_o0.0 T= 1024: ship    595.0ms patched    488.6ms  (1.22x)
+  c1024_n1024_s0.5_o0.0 calib: ship 0.7s patched 0.6s
+  c1024_n1024_s0.5_o0.002 T=   10: ship    100.2ms patched     96.1ms  (1.04x)
+  c1024_n1024_s0.5_o0.002 T=  128: ship    549.4ms patched    406.7ms  (1.35x)
+  c1024_n1024_s0.5_o0.002 T=  512: ship    594.6ms patched    458.8ms  (1.30x)
+  c1024_n1024_s0.5_o0.002 T= 1024: ship    649.5ms patched    478.6ms  (1.36x)
+  c1024_n1024_s0.5_o0.002 T= 1024: ship    657.4ms patched    482.4ms  (1.36x)
+  c1024_n1024_s0.5_o0.002 calib: ship 0.6s patched 0.6s
+  c1024_n1024_s0.9_o0.0 T=   10: ship     75.1ms patched     56.6ms  (1.33x)
+  c1024_n1024_s0.9_o0.0 T=  128: ship    519.1ms patched    225.6ms  (2.30x)
+  c1024_n1024_s0.9_o0.0 T=  512: ship    531.1ms patched    454.7ms  (1.17x)
+  c1024_n1024_s0.9_o0.0 T= 1024: ship    602.1ms patched    479.1ms  (1.26x)
+  c1024_n1024_s0.9_o0.0 T= 1024: ship    614.6ms patched    484.6ms  (1.27x)
+  c1024_n1024_s0.9_o0.0 calib: ship 0.7s patched 0.6s
+  c1024_n1024_s0.9_o0.002 T=   10: ship     96.1ms patched     91.4ms  (1.05x)
+  c1024_n1024_s0.9_o0.002 T=  128: ship    608.0ms patched    395.1ms  (1.54x)
+  c1024_n1024_s0.9_o0.002 T=  512: ship    606.7ms patched    417.1ms  (1.45x)
+  c1024_n1024_s0.9_o0.002 T= 1024: ship    649.6ms patched    486.4ms  (1.34x)
+  c1024_n1024_s0.9_o0.002 T= 1024: ship    627.5ms patched    475.7ms  (1.32x)
+  c1024_n1024_s0.9_o0.002 calib: ship 0.6s patched 0.6s
+  c1024_n8192_s0.5_o0.0 T=   10: ship     73.6ms patched     51.3ms  (1.43x)
+  c1024_n8192_s0.5_o0.0 T=  128: ship    498.2ms patched    175.5ms  (2.84x)
+  c1024_n8192_s0.5_o0.0 T=  512: ship    532.2ms patched    381.7ms  (1.39x)
+  c1024_n8192_s0.5_o0.0 T= 1024: ship    559.8ms patched    488.9ms  (1.15x)
+  c1024_n8192_s0.5_o0.0 T= 1024: ship    567.6ms patched    512.2ms  (1.11x)
+  c1024_n8192_s0.5_o0.0 calib: ship 2.9s patched 2.7s
+  c1024_n8192_s0.5_o0.002 T=   10: ship     98.0ms patched     85.8ms  (1.14x)
+  c1024_n8192_s0.5_o0.002 T=  128: ship    550.8ms patched    437.2ms  (1.26x)
+  c1024_n8192_s0.5_o0.002 T=  512: ship    601.1ms patched    491.7ms  (1.22x)
+  c1024_n8192_s0.5_o0.002 T= 1024: ship    612.2ms patched    499.5ms  (1.23x)
+  c1024_n8192_s0.5_o0.002 T= 1024: ship    626.0ms patched    497.1ms  (1.26x)
+  c1024_n8192_s0.5_o0.002 calib: ship 2.9s patched 2.6s
+  c1024_n8192_s0.9_o0.0 T=   10: ship     74.2ms patched     46.6ms  (1.59x)
+  c1024_n8192_s0.9_o0.0 T=  128: ship    520.5ms patched    182.6ms  (2.85x)
+  c1024_n8192_s0.9_o0.0 T=  512: ship    557.3ms patched    391.9ms  (1.42x)
+  c1024_n8192_s0.9_o0.0 T= 1024: ship    566.4ms patched    498.5ms  (1.14x)
+  c1024_n8192_s0.9_o0.0 T= 1024: ship    586.0ms patched    505.8ms  (1.16x)
+  c1024_n8192_s0.9_o0.0 calib: ship 2.9s patched 2.6s
+  c1024_n8192_s0.9_o0.002 T=   10: ship     95.4ms patched     80.7ms  (1.18x)
+  c1024_n8192_s0.9_o0.002 T=  128: ship    614.3ms patched    433.9ms  (1.42x)
+  c1024_n8192_s0.9_o0.002 T=  512: ship    582.9ms patched    455.3ms  (1.28x)
+  c1024_n8192_s0.9_o0.002 T= 1024: ship    638.7ms patched    494.1ms  (1.29x)
+  c1024_n8192_s0.9_o0.002 T= 1024: ship    611.0ms patched    495.3ms  (1.23x)
+  c1024_n8192_s0.9_o0.002 calib: ship 2.9s patched 2.6s
+C. mini_sample/linear.pt:
+  mini_linear T=   10: ship    182.4ms patched    114.5ms  (1.59x)
+  mini_linear T=  128: ship    664.5ms patched    388.1ms  (1.71x)
+  mini_linear T=  512: ship   1065.4ms patched    943.9ms  (1.13x)
+  mini_linear T= 1024: ship   1232.9ms patched   1037.9ms  (1.19x)
+  mini_linear T= 1024: ship   1232.8ms patched   1052.1ms  (1.17x)
+  mini_linear calib: ship 6.4s patched 6.2s
+E2E PASS
