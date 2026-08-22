@@ -476,7 +476,10 @@ def _rounds_np(M, v4, d, neg2d, d2col, gw, n_sweeps, rounds):
     torch version is dispatch-bound (~14 kernels/round on (T,C)). Same op
     sequence in fp32 sharing the torch buffers; argmin returns the first
     minimal index in both torch CPU and numpy. Verified torch.equal incl.
-    tie-storm inputs."""
+    tie-storm inputs.  roundopt: flattened to one loop with an EARLY EXIT
+    when a round flips nothing -- rows freeze monotonically (each row's
+    state changes only via its own flips), so every later round is a no-op
+    and skipping them is value-identical."""
     Mn = M.numpy()
     v4n = v4.numpy()
     dn = d.numpy()
@@ -491,30 +494,128 @@ def _rounds_np(M, v4, d, neg2d, d2col, gw, n_sweeps, rounds):
     bneg = v4n > -7.0
     ar = np.arange(T)
     one, mone = np.float32(1.0), np.float32(-1.0)
-    for _ in range(n_sweeps):
-        for _ in range(rounds):
-            np.abs(Mn, out=g)
-            np.multiply(g, nn2, out=g)
-            np.add(g, d2c, out=g)
-            np.less(Mn, 0.0, out=up)
-            legal = np.where(up, bpos, bneg)
-            np.less(g, 0.0, out=keep)
-            np.logical_and(keep, legal, out=keep)
-            np.logical_not(keep, out=keep)
-            g[keep] = _ROUND_INF
-            idx = g.argmin(axis=1)
-            gg = g[ar, idx]
-            fin = np.isfinite(gg)
-            dr = np.where(up[ar, idx], one, mone)
-            dr *= fin
-            v4n[ar, idx] += dr
-            nv = v4n[ar, idx]
-            bpos[ar, idx] = nv < 7.0
-            bneg[ar, idx] = nv > -7.0
-            coef = dr * dn[ar, idx]
-            gb = gwn[idx]
-            gb *= coef[:, None]
-            Mn += gb
+    for _ in range(n_sweeps * rounds):
+        np.abs(Mn, out=g)
+        np.multiply(g, nn2, out=g)
+        np.add(g, d2c, out=g)
+        np.less(Mn, 0.0, out=up)
+        legal = np.where(up, bpos, bneg)
+        np.less(g, 0.0, out=keep)
+        np.logical_and(keep, legal, out=keep)
+        np.logical_not(keep, out=keep)
+        g[keep] = _ROUND_INF
+        idx = g.argmin(axis=1)
+        gg = g[ar, idx]
+        fin = np.isfinite(gg)
+        dr = np.where(up[ar, idx], one, mone)
+        dr *= fin
+        v4n[ar, idx] += dr
+        nv = v4n[ar, idx]
+        bpos[ar, idx] = nv < 7.0
+        bneg[ar, idx] = nv > -7.0
+        coef = dr * dn[ar, idx]
+        gb = gwn[idx]
+        gb *= coef[:, None]
+        Mn += gb
+        if not fin.any():
+            break
+
+
+_ROUND_NP_THRESH = 32       # active rows at/below: numpy tail (dispatch)
+
+
+def _rounds_active(M, v4, d, neg2d, d2col, gw, total_rounds):
+    """Active-set round loop; SEQUENCE-identical to the hoisted loop.
+
+    Facts (roundopt, verified on 160 realistic refine calls):
+      * rows are independent: the rank-1 update M += coef[:,None]*gw[idx]
+        touches row r with row r's own (idx[r], coef[r]) only, and v4 /
+        bounds likewise; a row without a legal improving flip (dr=0) is
+        value-unchanged, hence can never flip later -- rows freeze
+        monotonically and the flipping set shrinks each round.
+      * per active row the round ops are the same values in the same order,
+        so selections and flips are bit-identical; frozen rows are dropped
+        (their remaining += 0.0 updates only affect zero signs).
+
+    Pass-reduced round (bit/sequence identical, fewer (A,C) passes):
+      - g = d2col + |M|*(-2d) in ONE addcmul (no-FMA on CPU: bit-equal to
+        mul_+add_, torch.equal verified across the suite);
+      - legality as ILLEGAL masks (v4>=7 / v4<=-7): g filled INF only where
+        ILLEGAL; fin = (g_sel < 0).  When a flip exists the argmin sees the
+        same negative-legal values (negatives < positives) -> same index;
+        otherwise dr=0 in both variants and the round is a value no-op.
+      - M += coef*gw[idx] via addcmul (one pass less).
+    v4 is updated in place for every row; M rows of still-active rows are
+    written back (frozen rows keep their last in-place values, which are
+    value-final since later updates add +-0.0 only).
+    """
+    T, C = M.shape
+    if T == 0 or total_rounds <= 0:
+        return
+    Ma = M
+    da, neg2da, d2ca = d, neg2d, d2col
+    rows = torch.arange(T, dtype=torch.long)
+    v4a = v4
+    local = False                    # buffers still alias M/v4
+    ipos = v4 >= 7.0                 # illegal-step masks (cannot move)
+    ineg = v4 <= -7.0
+    g = torch.empty(T, C, dtype=torch.float32)
+    gb = torch.empty(T, C, dtype=torch.float32)
+    up = torch.empty(T, C, dtype=torch.bool)
+    ill = torch.empty(T, C, dtype=torch.bool)
+    A = T
+    rnd = 0
+
+    def _writeback():
+        if local:
+            v4[rows] = v4a
+            M[rows] = Ma
+
+    while rnd < total_rounds and A > 0:
+        if A <= _ROUND_NP_THRESH:
+            # tiny active block: numpy twin (torch is dispatch-bound here),
+            # in place on the compact buffers, with the same early exit
+            _rounds_np(Ma, v4a, da, neg2da, d2ca, gw, 1, total_rounds - rnd)
+            _writeback()
+            return
+        torch.abs(Ma, out=g)
+        torch.addcmul(d2ca, g, neg2da, out=g)
+        torch.lt(Ma, 0.0, out=up)
+        torch.where(up, ipos, ineg, out=ill)
+        g.masked_fill_(ill, _ROUND_INF)
+        idx = g.argmin(dim=1, keepdim=True)
+        fin = g.gather(1, idx) < 0.0
+        dr = torch.where(Ma.gather(1, idx) < 0.0, 1.0, -1.0) * fin.float()
+        v4a.scatter_add_(1, idx, dr)
+        nv = v4a.gather(1, idx)
+        ipos.scatter_(1, idx, nv >= 7.0)
+        ineg.scatter_(1, idx, nv <= -7.0)
+        coef = dr * da.gather(1, idx)
+        torch.index_select(gw, 0, idx[:, 0], out=gb)
+        torch.addcmul(Ma, gb, coef, out=Ma)
+        if bool(fin.all()):
+            rnd += 1
+            continue
+        m = fin[:, 0]
+        if local:
+            v4[rows[~m]] = v4a[~m]
+            M[rows[~m]] = Ma[~m]
+        rows = rows[m]
+        Ma = Ma[m]
+        v4a = v4a[m]
+        da = da[m]
+        neg2da = neg2da[m]
+        d2ca = d2ca[m]
+        ipos = ipos[m]
+        ineg = ineg[m]
+        local = True
+        A = rows.shape[0]
+        g = torch.empty(A, C, dtype=torch.float32)
+        gb = torch.empty(A, C, dtype=torch.float32)
+        up = torch.empty(A, C, dtype=torch.bool)
+        ill = torch.empty(A, C, dtype=torch.bool)
+        rnd += 1
+    _writeback()
 
 
 def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
@@ -544,7 +645,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # per sweep is T-uniform but cost scales with R: spend depth on small T.
     # v26 online: tiered 10/6/5 paid +478 (small-T judge transfer ~1.0x
     # synthetic, not 0.28x -- slices differ). Curves unflattened by 12.
-    n_sweeps = 32 if T <= 256 else 14 if T <= 512 else 6
+    n_sweeps = 40 if T <= 256 else 18 if T <= 512 else 7
     neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
     d2col = (d * d) * col2    # (T,C) loop-invariant
     if T <= 32:
@@ -558,23 +659,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
                 break
             _rounds_np(M, v4, d, neg2d, d2col, gw, 1, REFINE_ROUNDS)
         return v4 * d
-    bpos = v4 < 7.0           # legality bounds; change only at flipped cols
-    bneg = v4 > -7.0
-    g = torch.empty_like(M)
-    up = torch.empty(M.shape, dtype=torch.bool)
-    legal = torch.empty(M.shape, dtype=torch.bool)
-    keep = torch.empty(M.shape, dtype=torch.bool)
-    gb = torch.empty_like(M)
-    for _ in range(n_sweeps):
-        for _ in range(REFINE_ROUNDS):
-            idx, dr = _round_hoisted(M, neg2d, d2col, bpos, bneg,
-                                     g, up, legal, keep)
-            v4.scatter_add_(1, idx, dr)
-            _bound_update(v4, bpos, bneg, idx)
-            coef = dr * d.gather(1, idx)
-            torch.index_select(gw, 0, idx[:, 0], out=gb)
-            gb.mul_(coef)
-            M += gb
+    _rounds_active(M, v4, d, neg2d, d2col, gw, n_sweeps * REFINE_ROUNDS)
     return v4 * d
 
 
@@ -627,26 +712,10 @@ def _refine_weight_values(w_final: torch.Tensor, q_used: torch.Tensor,
         i2 = min(i1 + REFINE_W_CHUNK, N)
         neg2d = -2.0 * d[i1:i2]
         d2col = (d[i1:i2] * d[i1:i2]) * colE
-        bpos = v4[i1:i2] < 7.0
-        bneg = v4[i1:i2] > -7.0
-        rc = i2 - i1
-        g = torch.empty(rc, C, dtype=torch.float32)
-        gb = torch.empty(rc, C, dtype=torch.float32)
-        up = torch.empty(rc, C, dtype=torch.bool)
-        legal = torch.empty(rc, C, dtype=torch.bool)
-        keep = torch.empty(rc, C, dtype=torch.bool)
         Ac = A[i1:i2]
         v4c = v4[i1:i2]
-        for _ in range(REFINE_W_SWEEPS):
-            for _ in range(REFINE_ROUNDS):
-                idx, dr = _round_hoisted(Ac, neg2d, d2col, bpos, bneg,
-                                         g, up, legal, keep)
-                v4c.scatter_add_(1, idx, dr)
-                _bound_update(v4c, bpos, bneg, idx)
-                coef = dr * d[i1:i2].gather(1, idx)
-                torch.index_select(Gxx, 0, idx[:, 0], out=gb)
-                gb.mul_(coef)
-                Ac += gb
+        _rounds_active(Ac, v4c, d[i1:i2], neg2d, d2col, Gxx,
+                       REFINE_W_SWEEPS * REFINE_ROUNDS)
     wn = v4 * d
     hold1 = ((xh @ wn.T - ref_h) ** 2).mean().item()
     if hold1 < hold0:

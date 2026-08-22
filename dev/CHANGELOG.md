@@ -291,3 +291,7 @@
 - chunked numpy GPTQ (4x2048 rows at N=8192): DEAD, torch still wins (1.71 vs 1.88s; bit-identical but no saving)
 - V-compensation 'big fish' was a LOCAL-PROFILE PHANTOM: _dyn_v's guard is correct, _v_compensate NEVER runs online (carry empty); locally/in-self_check it DOES run because same-process q/k/v calls populate the module carry. METHOD CORRECTION: all local attention timings (self_check, stress, agent benches) carry phantom V-comp cost (~1.78s/group dyn locally) -- attention local->online extrapolation has been overestimated. Online dead-code cleanup value = 0
 - net audit3 result: no easy savings found in main session; round-fusion surgery pending agent retry or next session. v32 options unchanged: night-tier ride on EXISTING budget (+40-70, deepest window)
+## v32 - 2026-08-23 00:41:35
+- artifact: dist/solution_v32.zip
+- note: v32 = roundopt surgery (active-set compaction + pass-reduced round + numpy tail; refine calls 1.06-2.0x faster, 160/160 flip-trace bit-identity, est 15-25s online saved) + tier bump 32/14/6 -> 40/18/7 spending ~11s of the savings. True cost est ~270-280 good-window. DEEP-NIGHT submission. Expected +70-120 over 24917
+
