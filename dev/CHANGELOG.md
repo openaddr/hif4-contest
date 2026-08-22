@@ -204,3 +204,7 @@
 - artifact: dist/solution_v23.zip
 - note: v23 = v22 + n_sweeps 5->12 uniform (T<=1024). Sweep-curve study (synthetic, 0.28x judge transfer validated by v22's +172): no flattening by 12, s12 = +321..455 online for +17-29s (248 -> 265-277s). Rounds axis is a no-op (s10==s5r40 bit-identical). E3 stays 1 sweep (synthetic hold-out rejects it 25/25 but judge/mini paid +61 -- synthetic can't reproduce its win condition). C4096-R1024 restore (+30-38 direct, +7s) deferred to v24 pending v23 timing. diag3 +7.2594->+7.2896
 
+## v24 - 2026-08-22 15:53:58
+- artifact: dist/solution_v24.zip
+- note: v24 = v23 de-risked: n_sweeps 12->8. v23 TIMED OUT: true s12 cost was +37-45s (all-C2048 pricing from the agent's own per-call numbers: T1024 +22s + T<=512 +15s), not the +17-29 blended estimate I quoted -- judge's refined-call population is C2048-heavier. v23 true runtime ~285-293s. s8: worst-case +16s -> ~264s, value +187-251 (0.28x transfer). v24's timing readout recalibrates the true per-sweep price for v25. Banked best unchanged: 24019 (v22)
+
