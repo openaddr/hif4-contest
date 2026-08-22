@@ -226,3 +226,7 @@
 - artifact: dist/solution_v27.zip
 - note: v27 = v26 + tier deepening 10/6/5 -> 14/8/5. v26 readout: +478 (24497@259s) vs +130-200 est -> small-T sweep judge transfer ~1.0x synthetic (0.28x was the T1024-slice calibration; slices differ). T=1024 tier stays 5 (memory-bound, dearest per point; night-window item). Est +5-7s -> ~265 daytime / 239 good-window. Value +150-350
 
+## v28 - 2026-08-22 19:55:57
+- artifact: dist/solution_v28.zip
+- note: v28 = v27 + tier deepening 14/8/5 -> 20/10/5. v27 readout: +159 @231s (good window; deep-night regime, daytime est ~257). Sweep axis decelerating but unflattened (+478 -> +159). T=1024 stays 5 (weak slice transfer 0.28x, dearest per point). Est +6-7s -> ~238 good / 264 daytime. Value +100-200
+
