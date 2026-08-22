@@ -218,3 +218,7 @@
 - REVISED CEILING: observed passes <=286s, failures >=~290 -> true timeout ~288+-few, NOT 300. Safety line: <=265s in good-window units
 - Sweep-round pricing corrected twice: memory-bound (judge ~2x local) AND launch-bound at small T (judge kernel-launch overhead makes small-T sweeps 2-3x the naive estimate too). Sweep axis has NO budget at v22's 248s base -> needs new savings first
 - second timing-audit agent launched (dev/audit2): numpy boundary extension, vec threshold, E3 chunking, legality-mask caching in _flip_sel, holdout matmul dedup, profiler top-10. Target 15-25s to reopen the sweep axis (each 10s ~ +80-150 online)
+## v26 - 2026-08-22 18:49:53
+- artifact: dist/solution_v26.zip
+- note: v26 = v22 + audit2 bundle (5 bit-identical fixes, ~16-18s online: refinement round-loop invariant hoisting + legality-bound caching (C4), weight-refine restructure + W_CHUNK 2048->1024 (C3), numpy rounds for T<=32 (E8), vec threshold 4M->2M (C2), holdout matmul dedupe (C5); agent gate 8/8) + tiered sweeps 10/6/5 (T<=256/512/1024). Sizing per triple-timeout postmortem: ~241-243s good-window / 267-269 daytime, under the ~288 ceiling with bad-minute buffer. Value +130-200 from tiered sweeps on top of 24019
+

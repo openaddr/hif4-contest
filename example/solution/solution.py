@@ -271,7 +271,9 @@ REFINE_MAX_C = 2048         # channel cap for the whole lattice stage. carry3
                             # stays inside the proven v14 envelope.
 REFINE_W_ROWS = 2048        # calib rows feeding the weight objective
 REFINE_W_HOLD_ROWS = 1024   # hold-out rows for the weight guard
-REFINE_W_CHUNK = 2048       # weight-row chunk for the greedy sweep
+REFINE_W_CHUNK = 1024       # weight-row chunk for the greedy sweep
+                            # (rows independent -> chunk size bit-inert;
+                            # 1024 measured fastest, best cache locality)
 
 # --- cross-call Q/K/V carry (judge calls q, k, v sequentially per test) ---
 _QKV_CARRY: dict = {}
@@ -440,6 +442,81 @@ def _flip_sel(d: torch.Tensor, M: torch.Tensor, col2: torch.Tensor,
     return g, dirn
 
 
+_ROUND_INF = float("inf")
+
+
+def _round_hoisted(M, neg2d, d2col, bpos, bneg, g, up, legal, keep):
+    """One greedy top-1 round on a row block, bit-identical to
+    g, dirn = _flip_sel(d_blk, M, col2, v4_blk) + argmin/apply: same ops in
+    the same order with loop-invariants (-2*d, (d*d)*col2) and the v4 legality
+    bounds hoisted/cached (bounds change only at the flipped column, maintained
+    by scatter)."""
+    torch.abs(M, out=g)
+    g.mul_(neg2d)
+    g.add_(d2col)
+    torch.lt(M, 0.0, out=up)
+    torch.where(up, bpos, bneg, out=legal)
+    torch.lt(g, 0.0, out=keep)
+    keep &= legal
+    g.masked_fill_(keep.logical_not_(), _ROUND_INF)
+    idx = g.argmin(dim=1, keepdim=True)
+    fin = torch.isfinite(g.gather(1, idx))
+    dr = torch.where(up.gather(1, idx), 1.0, -1.0) * fin.float()
+    return idx, dr
+
+
+def _bound_update(v4c, bpos, bneg, idx):
+    nv = v4c.gather(1, idx)
+    bpos.scatter_(1, idx, nv < 7.0)
+    bneg.scatter_(1, idx, nv > -7.0)
+
+
+def _rounds_np(M, v4, d, neg2d, d2col, gw, n_sweeps, rounds):
+    """numpy twin of the optimized round loop for tiny T (<= 32), where the
+    torch version is dispatch-bound (~14 kernels/round on (T,C)). Same op
+    sequence in fp32 sharing the torch buffers; argmin returns the first
+    minimal index in both torch CPU and numpy. Verified torch.equal incl.
+    tie-storm inputs."""
+    Mn = M.numpy()
+    v4n = v4.numpy()
+    dn = d.numpy()
+    nn2 = neg2d.numpy()
+    d2c = d2col.numpy()
+    gwn = gw.numpy() if gw.is_contiguous() else gw.contiguous().numpy()
+    T = Mn.shape[0]
+    g = np.empty_like(Mn)
+    up = np.empty(Mn.shape, dtype=bool)
+    keep = np.empty(Mn.shape, dtype=bool)
+    bpos = v4n < 7.0
+    bneg = v4n > -7.0
+    ar = np.arange(T)
+    one, mone = np.float32(1.0), np.float32(-1.0)
+    for _ in range(n_sweeps):
+        for _ in range(rounds):
+            np.abs(Mn, out=g)
+            np.multiply(g, nn2, out=g)
+            np.add(g, d2c, out=g)
+            np.less(Mn, 0.0, out=up)
+            legal = np.where(up, bpos, bneg)
+            np.less(g, 0.0, out=keep)
+            np.logical_and(keep, legal, out=keep)
+            np.logical_not(keep, out=keep)
+            g[keep] = _ROUND_INF
+            idx = g.argmin(axis=1)
+            gg = g[ar, idx]
+            fin = np.isfinite(gg)
+            dr = np.where(up[ar, idx], one, mone)
+            dr *= fin
+            v4n[ar, idx] += dr
+            nv = v4n[ar, idx]
+            bpos[ar, idx] = nv < 7.0
+            bneg[ar, idx] = nv > -7.0
+            coef = dr * dn[ar, idx]
+            gb = gwn[idx]
+            gb *= coef[:, None]
+            Mn += gb
+
+
 def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
                        unit: torch.Tensor, gw: torch.Tensor,
                        gwf: torch.Tensor) -> torch.Tensor:
@@ -465,15 +542,30 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # v23/v24 timeout postmortem: sweep rounds are MEMORY-BOUND (judge ~2x
     # local, not 4.8x) -> s5->s8 at T=1024 costs ~22s online, s12 ~55s. Value
     # per sweep is T-uniform but cost scales with R: spend depth on small T.
-    n_sweeps = 12 if T <= 256 else 8 if T <= 512 else 5
+    n_sweeps = 10 if T <= 256 else 6 if T <= 512 else 5
+    neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
+    d2col = (d * d) * col2    # (T,C) loop-invariant
+    if T <= 32:
+        # tiny-T: torch round loop is dispatch-bound; numpy twin is ~3x faster
+        _rounds_np(M, v4, d, neg2d, d2col, gw, n_sweeps, REFINE_ROUNDS)
+        return v4 * d
+    bpos = v4 < 7.0           # legality bounds; change only at flipped cols
+    bneg = v4 > -7.0
+    g = torch.empty_like(M)
+    up = torch.empty(M.shape, dtype=torch.bool)
+    legal = torch.empty(M.shape, dtype=torch.bool)
+    keep = torch.empty(M.shape, dtype=torch.bool)
+    gb = torch.empty_like(M)
     for _ in range(n_sweeps):
         for _ in range(REFINE_ROUNDS):
-            g, dirn = _flip_sel(d, M, col2, v4)
-            idx = g.argmin(dim=1, keepdim=True)
-            fin = torch.isfinite(g.gather(1, idx))
-            dr = dirn.gather(1, idx) * fin.float()
+            idx, dr = _round_hoisted(M, neg2d, d2col, bpos, bneg,
+                                     g, up, legal, keep)
             v4.scatter_add_(1, idx, dr)
-            M += (dr * d.gather(1, idx)) * gw[idx[:, 0]]
+            _bound_update(v4, bpos, bneg, idx)
+            coef = dr * d.gather(1, idx)
+            torch.index_select(gw, 0, idx[:, 0], out=gb)
+            gb.mul_(coef)
+            M += gb
     return v4 * d
 
 
@@ -519,16 +611,33 @@ def _refine_weight_values(w_final: torch.Tensor, q_used: torch.Tensor,
     hold0 = ((xh @ q_used.T - ref_h) ** 2).mean().item()
     if not (0.0 < hold0 < float("inf")):
         return weight_params, q_used
-    for _ in range(REFINE_W_SWEEPS):
-        for _ in range(REFINE_ROUNDS):
-            for i1 in range(0, N, REFINE_W_CHUNK):
-                i2 = min(i1 + REFINE_W_CHUNK, N)
-                g, dirn = _flip_sel(d[i1:i2], A[i1:i2], colE, v4[i1:i2])
-                idx = g.argmin(dim=1, keepdim=True)
-                fin = torch.isfinite(g.gather(1, idx))
-                dr = dirn.gather(1, idx) * fin.float()
-                v4[i1:i2].scatter_add_(1, idx, dr)
-                A[i1:i2] += (dr * d[i1:i2].gather(1, idx)) * Gxx[idx[:, 0]]
+    # chunk-outer restructure: rows are independent (a flip touches only its
+    # own row of v4/A; Gxx is read-only), so each row's flip sequence is
+    # bit-identical under either nesting; enables per-chunk hoisting.
+    for i1 in range(0, N, REFINE_W_CHUNK):
+        i2 = min(i1 + REFINE_W_CHUNK, N)
+        neg2d = -2.0 * d[i1:i2]
+        d2col = (d[i1:i2] * d[i1:i2]) * colE
+        bpos = v4[i1:i2] < 7.0
+        bneg = v4[i1:i2] > -7.0
+        rc = i2 - i1
+        g = torch.empty(rc, C, dtype=torch.float32)
+        gb = torch.empty(rc, C, dtype=torch.float32)
+        up = torch.empty(rc, C, dtype=torch.bool)
+        legal = torch.empty(rc, C, dtype=torch.bool)
+        keep = torch.empty(rc, C, dtype=torch.bool)
+        Ac = A[i1:i2]
+        v4c = v4[i1:i2]
+        for _ in range(REFINE_W_SWEEPS):
+            for _ in range(REFINE_ROUNDS):
+                idx, dr = _round_hoisted(Ac, neg2d, d2col, bpos, bneg,
+                                         g, up, legal, keep)
+                v4c.scatter_add_(1, idx, dr)
+                _bound_update(v4c, bpos, bneg, idx)
+                coef = dr * d[i1:i2].gather(1, idx)
+                torch.index_select(Gxx, 0, idx[:, 0], out=gb)
+                gb.mul_(coef)
+                Ac += gb
     wn = v4 * d
     hold1 = ((xh @ wn.T - ref_h) ** 2).mean().item()
     if hold1 < hold0:
@@ -568,7 +677,7 @@ def _quantize_weighted(x2d: torch.Tensor, wgt: torch.Tensor, grid=CAND_GRID) -> 
     w2d = wgt if wgt.shape == (R, C) else wgt.expand(R, C)
     # candidate-batched twin wins on large inputs (weight matrices, big-T
     # dynamic calls); the plain loop is faster below ~4M elements
-    fn = _quant_chunk_vec if R * C >= 4_000_000 else _quant_chunk
+    fn = _quant_chunk_vec if R * C >= 2_000_000 else _quant_chunk
     for s0 in range(0, R, ROW_CHUNK):
         x_chunk = x2d[s0:s0 + ROW_CHUNK]
         p = fn(
@@ -669,14 +778,16 @@ def hif4_calibration_and_quantize_weight(
     logm = m.log()
     logm = logm - logm.mean()
     rows = torch.randperm(R)[: min(R, 256)]
+    w_rows = w[rows]                      # identical gather, hoisted
+    a_wr = a_big @ w_rows.T               # identical operands -> same matmul
     best_alpha = 0.0
     best_loss = None
     for alpha in ALPHA_GRID:
         s = torch.exp(logm * alpha)
-        wp = _quant_weight_fast(w[rows] / s, torch.ones(1, C))
+        wp = _quant_weight_fast(w_rows / s, torch.ones(1, C))
         wq = (wp["sign"] * wp["mant"] * wp["scale_lv3"] * wp["scale_lv2"]
               * wp["scale_factor"]).flatten(-4, -1) * s
-        loss = ((a_big @ wq.T - a_big @ w[rows].T) ** 2).mean().item()
+        loss = ((a_big @ wq.T - a_wr) ** 2).mean().item()
         if best_loss is None or loss < best_loss:
             best_loss, best_alpha = loss, alpha
     s = torch.exp(logm * best_alpha)
@@ -727,6 +838,7 @@ def hif4_calibration_and_quantize_weight(
         return t
 
     w_final = tf_final(w_s)
+    _ref_shared = None
 
     # ---- anchored search + hold-out-guarded GPTQ ----
     weight_params = _quantize_weighted(w_final, ones_w)
@@ -736,6 +848,7 @@ def hif4_calibration_and_quantize_weight(
         unit = _params_unit_flat(weight_params)
         q_g = _gptq_quantize_values(w_final, unit, Uw)
         ref = xh_pick @ w_final.T
+        _ref_shared = ref                  # reused below (same operands)
         mse_r = ((xh_pick @ q_used.T - ref) ** 2).mean().item()
         mse_g = ((xh_pick @ q_g.T - ref) ** 2).mean().item()
         if mse_g < mse_r:
@@ -774,7 +887,8 @@ def hif4_calibration_and_quantize_weight(
                 xg0 = torch.empty_like(xg)
                 xg0[:, order] = xg
                 xg = xg0
-            ref2 = xh_pick @ w_final.T
+            ref2 = (_ref_shared if _ref_shared is not None
+                    else xh_pick @ w_final.T)
             mse_ar = ((xr @ q_used.T - ref2) ** 2).mean().item()
             mse_ag = ((xg @ q_used.T - ref2) ** 2).mean().item()
             if mse_ag < mse_ar:
