@@ -234,3 +234,7 @@
 - artifact: dist/solution_v29.zip
 - note: v29 = v28 + tiers 24/12/5 + C4096 R1024 refinement restored (probe-era direct measurement +30-38 for +7s; the T<=512 cap for C>2048 removed). Sweep axis tail: +478 -> +159 -> +83. Est +10-12s -> ~250 good-window / ~275 daytime. SUBMIT AT GOOD WINDOW ONLY. Expected +85-140
 
+
+## v27/v28/v29 readouts - 2026-08-22/23
+- v27: 24656 @231s (+159, good window). v28: 24739 @262s (+83). v29: 24794 @271s (+55, C4096-R1024 restore + tiers 24/12/5). Sweep axis CLOSED: +478 -> +159 -> +83 -> +55 asymptote. Remaining family tail ~+60-90 (T1024->6 + tiers 26/14) for +8-9s, night-window only -- optional final free roll
+- decomp2 agent launched: fresh residual anatomy on current config (act/w/lattice-converged/grid-lock split, grid-re-anchor upper bound at calibration, unrefined population gaps: hash-odd C4096 / R>1024 calls / C=8192 never-refined). Also incident log: v28 commit was killed by my backgrounded git chain + watchdog -- git ops now FOREGROUND ONLY with origin/main log verification (standing rule amended)
