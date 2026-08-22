@@ -247,3 +247,7 @@
 ## ceiling correction - 2026-08-23
 - user reports a leaderboard entry at 292s -> the "~288 ceiling" inference was WRONG; the limit is 300s as stated. The triple-timeout postmortem's revised safety line (265 good-window) was ~10-15s too conservative; all three timeouts remain consistent with true runtime >=300 under their load windows
 - tactical unlock: good-window budget to ~280-285 true-cost (15-20s bad-minute buffer). #1 at 286 and the 292s entry show ~290 true-cost passes. v29 true-cost ~248-250 good-window -> +30-40s available: v30 deep tail (T<=256->32, T512->14, T1024->6, +15-18s, night-only, est +65-100) now back on the table; queued behind pproxy/decomp2 results
+## v30 - 2026-08-22 20:42:39
+- artifact: dist/solution_v30.zip
+- note: v30 = deep sweep tail unlocked by ceiling correction (limit is 300s per a 292s leaderboard pass; our '~288' was over-inferred): tiers 24/12/5 -> 32/14/6. True-cost ~265-268 good-window (night-only submission; 15-20s bad-minute buffer to 300). Est +65-100 over 24794
+
