@@ -11,9 +11,9 @@ Subcommands:
            plus 8 extra C=8192 groups (never refined on ship).
   t2048  - task 2b: T=2048 test calls scored with the ship gate (R<=1024 =>
            no refinement) and a REFINE_T_MAX=4096 patched module, against
-           the paired T=1024 call.  Reuses cached ship cal states; the group
-           generator appends the 2048 draw after the 9 standard draws, so
-           calib + first 5 test cases are bit-identical to `pop`.
+           the paired T=1024 call.  Reuses cached ship cal states (the
+           calib draws are bit-identical to `pop`; test draws differ, so
+           T2048 vs T1024 is compared within this run).
   rep    - tables.
 
 Usage: python dev/decomp2/study2.py pop [--C 512,1024] [--limit k]
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import types
@@ -51,11 +52,15 @@ NS = (1024, 8192)
 SPREADS = (0.5, 0.9)
 OUTLIERS = (0.0, 0.002)
 
-# exact ship lines (verify count==1 before replace)
+# exact ship lines (verify count==1 before replace).  The sweeps tier line
+# is patched by REGEX: the main agent moved 24/12/5 -> 32/14/6 (v30) while
+# this study ran; the decomposition targets whatever is CURRENT.
 _E4_SHIP = ("    _e4 = (C <= REFINE_MAX_C\n"
             "           or (C <= 4096 and int(w.double().abs().sum().item() * 1e3) % 2 == 0))")
 _TMAX_SHIP = "REFINE_T_MAX = 1024"
-_SWEEPS_SHIP = "n_sweeps = 24 if T <= 256 else 12 if T <= 512 else 5"
+_SWEEPS_RE = re.compile(
+    r"(?P<pre>    n_sweeps = )(?P<s1>\d+)(?P<mid> if T <= 256 else )"
+    r"(?P<s2>\d+)(?P<mid2> if T <= 512 else )(?P<s3>\d+)")
 
 
 def load_patched(e4=None, t_max=None, sweeps=None):
@@ -70,13 +75,15 @@ def load_patched(e4=None, t_max=None, sweeps=None):
         raise ValueError(e4)
     if t_max is not None:
         subs.append((_TMAX_SHIP, f"REFINE_T_MAX = {int(t_max)}"))
-    if sweeps is not None:
-        subs.append((_SWEEPS_SHIP,
-                     f"n_sweeps = {int(sweeps)} if T <= 256 else 12 if T <= 512 else 5"))
     for old, new in subs:
         if src.count(old) != 1:
             raise RuntimeError(f"patch target not unique ({src.count(old)}): {old!r}")
         src = src.replace(old, new)
+    if sweeps is not None:
+        repl = (f"\\g<pre>{int(sweeps)}\\g<mid>\\g<s2>\\g<mid2>\\g<s3>")
+        src, n = _SWEEPS_RE.subn(repl, src, count=1)
+        if n != 1:
+            raise RuntimeError("sweeps patch failed")
     mod = types.ModuleType("_d2_sol")
     mod.__file__ = SOL_PATH
     exec(compile(src, SOL_PATH, "exec"), mod.__dict__)
@@ -238,14 +245,35 @@ def run_pop(c_filter, limit):
 
 
 # ---------------------------------------------------------------------------
-# t2048 (task 2b)
+# t2048 (task 2b).  NOTE: synth.make_linear_group runs FOUR draw passes (two
+# placeholder + two real) over `tokens`, so ANY token-list change shifts the
+# calib draws too and pop cal states cannot be reused.  Each activation draw
+# uses its own fresh channel gains (per synth.make_act_pair), so an extra
+# T=2048 activation generated from an independent seeded generator is
+# statistically identical to one more draw; the pop group (and its cached
+# ship cal state) stays untouched.
 # ---------------------------------------------------------------------------
+def make_extra_act(seed, C, spread, outlier_p, T):
+    gen = torch.Generator().manual_seed(seed + 9779)
+    x = (torch.randn(T, 1, generator=gen)
+         * synth._chan_gains(C, spread, gen).unsqueeze(0)
+         * torch.randn(T, C, generator=gen))
+    if outlier_p > 0:
+        mask = torch.rand(T, C, generator=gen) < outlier_p
+        x = x + mask.float() * torch.randn(T, C, generator=gen)             * x.abs().amax() * 3
+    xb = x.reshape(-1, 16)
+    amax = xb.abs().amax(dim=1, keepdim=True).clamp_min(1e-30)
+    scale = ((amax / 6.0).to(torch.bfloat16).float()).clamp_min(1e-30)
+    q = xb / scale
+    idx = torch.bucketize(q.abs(), (synth.E2M1_GRID[1:] + synth.E2M1_GRID[:-1]) / 2.0)
+    carrier = (torch.sign(q) * synth.E2M1_GRID[idx]).reshape(T, -1).to(torch.bfloat16)
+    return carrier, scale.reshape(T, -1).to(torch.bfloat16)
+
+
 def run_t2048(c_filter):
-    res = jload(RES)
     res2 = jload(RES_T2K)
     grid = [g for g in iter_grid(c_filter) if g[2] <= 4096]
     print(f"[t2048] {len(grid)} groups")
-    checked = set()
     for name, seed, C, N, spread, outp in grid:
         cpath = os.path.join(CACHE, f"{name}_ship.pt")
         if not os.path.exists(cpath):
@@ -256,29 +284,17 @@ def run_t2048(c_filter):
             print(f"[t2048] {name}: cached, skip")
             continue
         t0 = time.perf_counter()
-        group = build_group(name, test_t=TEST_T2)
-        # sanity: calib tensors bit-identical to the pop group (draw order)
-        if name not in checked:
-            g0 = build_group(name)
-            for a, b in zip(group["calib_activation_list"],
-                            g0["calib_activation_list"]):
-                assert torch.equal(a[0], b[0]) and torch.equal(a[1], b[1])
-            for i in (0, 1, 2, 3, 4):
-                a = group["test_activation_list"][i]
-                b = g0["test_activation_list"][i]
-                assert torch.equal(a[0], b[0]) and torch.equal(a[1], b[1])
-            checked.add(name)
-            print(f"[t2048] {name}: calib/test prefix bit-identical to pop OK")
+        group = build_group(name)                 # standard pop group
+        extra = make_extra_act(seed, C, spread, outp, 2048)
         w_ref = H.dequantize_nvfp4(*group["weight"])
         w_std = V.deq(V.quant_alg1(w_ref.float()))
         cc = torch.load(cpath, weights_only=True)
         st = cc["cal"]["activation_state"]
         wp = cc["cal"]["weight_params"]
+        pairs = [group["test_activation_list"][4], extra]   # T=1024, T=2048
         for tag in ("ship", "tmax4096"):
             mod = mod_for(tag)
-            # only the last T=1024 case (pairing) and the T=2048 case
-            cases = [score_case(mod, p, w_ref, w_std, wp, st)
-                     for p in group["test_activation_list"][3:]]
+            cases = [score_case(mod, p, w_ref, w_std, wp, st) for p in pairs]
             entry[tag] = cases
             sc = [c["score"] * 100 for c in cases]
             print(f"[t2048] {name} {tag}: pp {['%.1f' % s for s in sc]} "
