@@ -1,0 +1,79 @@
+[run] mini|none: cached
+[run] mini|hadamard: cached
+[run] mini|Ra: cached
+[run] mini|Rb: cached
+[run] mini|Rc: cached
+[run] mini|Rd: cached
+[run] c1024_n1024_s0.5_o0.0|none: cached
+[run] c1024_n1024_s0.5_o0.0|hadamard: cached
+[run] c1024_n1024_s0.5_o0.0|Ra: cached
+[run] c1024_n1024_s0.5_o0.0|Rb: cached
+[run] c1024_n1024_s0.5_o0.0|Rc: cached
+[run] c1024_n1024_s0.5_o0.0|Rd: cached
+[run] c1024_n8192_s0.5_o0.002|none: cached
+[run] c1024_n8192_s0.5_o0.002|hadamard: cached
+[run] c1024_n8192_s0.5_o0.002|Ra: cached
+[run] c1024_n8192_s0.5_o0.002|Rb: cached
+[run] c1024_n8192_s0.5_o0.002|Rc: cached
+[run] c1024_n8192_s0.5_o0.002|Rd: cached
+[run] c1024_n1024_s0.9_o0.0|none: cached
+[run] c1024_n1024_s0.9_o0.0|hadamard: cached
+[run] c1024_n1024_s0.9_o0.0|Ra: cached
+[run] c1024_n1024_s0.9_o0.0|Rb: cached
+[run] c1024_n1024_s0.9_o0.0|Rc: cached
+[run] c1024_n1024_s0.9_o0.0|Rd: cached
+[run] c1024_n8192_s0.9_o0.002|none: cached
+[run] c1024_n8192_s0.9_o0.002|hadamard: cached
+[run] c1024_n8192_s0.9_o0.002|Ra: cached
+[run] c1024_n8192_s0.9_o0.002|Rb: cached
+[run] c1024_n8192_s0.9_o0.002|Rc: cached
+[run] c1024_n8192_s0.9_o0.002|Rd: cached
+[run] c2048_n1024_s0.5_o0.0|none: cached
+[run] c2048_n1024_s0.5_o0.0|hadamard: cached
+[run] c2048_n1024_s0.5_o0.0|Ra: cached
+[run] c2048_n1024_s0.5_o0.0|Rb: cached
+[run] c2048_n1024_s0.5_o0.0|Rc: cached
+[run] c2048_n1024_s0.5_o0.0|Rd: cached
+[run] c2048_n8192_s0.5_o0.002|none: cached
+[run] c2048_n8192_s0.5_o0.002|hadamard: cached
+[run] c2048_n8192_s0.5_o0.002|Ra: cached
+[run] c2048_n8192_s0.5_o0.002|Rb: cached
+[run] c2048_n8192_s0.5_o0.002|Rc: cached
+[run] c2048_n8192_s0.5_o0.002|Rd: cached
+[run] c2048_n1024_s0.9_o0.0|none: cached
+[run] c2048_n1024_s0.9_o0.0|hadamard: cached
+[run] c2048_n1024_s0.9_o0.0|Ra: cached
+[run] c2048_n1024_s0.9_o0.0|Rb: cached
+[run] c2048_n1024_s0.9_o0.0|Rc: cached
+[run] c2048_n1024_s0.9_o0.0|Rd: cached
+[run] c2048_n8192_s0.9_o0.002|none: cached
+[run] c2048_n8192_s0.9_o0.002|hadamard: cached
+[run] c2048_n8192_s0.9_o0.002|Ra: cached
+[run] c2048_n8192_s0.9_o0.002|Rb: cached
+[run] c2048_n8192_s0.9_o0.002|Rc: cached
+[run] c2048_n8192_s0.9_o0.002|Rd: cached
+[run] c4096_n1024_s0.5_o0.0|none: cached
+[run] c4096_n1024_s0.5_o0.0|hadamard: cached
+[run] c4096_n1024_s0.5_o0.0|Ra: mode=1 cal=3.4s fit=2.6s hold=+57.14pp | ['97.1', '97.2', '94.6', '56.8', '57.3']
+[run] c4096_n1024_s0.5_o0.0|Rb: mode=1 cal=3.4s fit=0.5s hold=+57.25pp | ['97.2', '97.2', '94.6', '56.8', '56.9']
+[run] c4096_n1024_s0.5_o0.0|Rc: mode=1 cal=3.4s fit=0.3s hold=+57.27pp | ['97.2', '97.2', '94.6', '57.1', '57.1']
+[run] c4096_n1024_s0.5_o0.0|Rd: mode=1 cal=3.5s fit=2.1s hold=+57.39pp | ['97.3', '97.2', '94.6', '56.7', '57.1']
+[run] c4096_n8192_s0.5_o0.002|none: cached
+[run] c4096_n8192_s0.5_o0.002|hadamard: cached
+[run] c4096_n8192_s0.5_o0.002|Ra: mode=1 cal=11.1s fit=2.0s hold=+24.91pp | ['68.5', '60.9', '51.2', '29.0', '24.4']
+[run] c4096_n8192_s0.5_o0.002|Rb: mode=1 cal=13.1s fit=0.5s hold=+24.85pp | ['68.7', '61.0', '51.5', '29.2', '24.6']
+[run] c4096_n8192_s0.5_o0.002|Rc: mode=1 cal=11.3s fit=0.3s hold=+24.26pp | ['68.1', '60.8', '51.1', '28.5', '23.7']
+[run] c4096_n8192_s0.5_o0.002|Rd: mode=1 cal=12.8s fit=1.7s hold=+24.76pp | ['68.5', '60.8', '51.2', '29.1', '24.4']
+[run] c4096_n1024_s0.9_o0.0|none: cached
+[run] c4096_n1024_s0.9_o0.0|hadamard: cached
+[run] c4096_n1024_s0.9_o0.0|Ra: mode=1 cal=3.5s fit=2.0s hold=+54.72pp | ['96.9', '97.1', '94.6', '55.7', '55.6']
+[run] c4096_n1024_s0.9_o0.0|Rb: mode=1 cal=3.4s fit=0.5s hold=+54.65pp | ['96.8', '97.1', '94.6', '55.6', '56.0']
+[run] c4096_n1024_s0.9_o0.0|Rc: mode=1 cal=3.5s fit=0.3s hold=+54.97pp | ['97.1', '97.2', '94.6', '55.5', '56.1']
+[run] c4096_n1024_s0.9_o0.0|Rd: mode=1 cal=3.4s fit=1.7s hold=+54.79pp | ['96.8', '97.2', '94.6', '55.4', '55.8']
+[run] c4096_n8192_s0.9_o0.002|none: cached
+[run] c4096_n8192_s0.9_o0.002|hadamard: cached
+[run] c4096_n8192_s0.9_o0.002|Ra: mode=1 cal=13.3s fit=2.0s hold=+37.41pp | ['65.3', '56.8', '47.2', '37.5', '37.4']
+[run] c4096_n8192_s0.9_o0.002|Rb: mode=1 cal=14.8s fit=0.7s hold=+37.76pp | ['65.0', '57.0', '47.4', '37.9', '37.7']
+[run] c4096_n8192_s0.9_o0.002|Rc: mode=1 cal=13.4s fit=0.4s hold=+36.97pp | ['64.9', '56.5', '46.9', '37.1', '36.9']
+[run] c4096_n8192_s0.9_o0.002|Rd: mode=1 cal=14.7s fit=2.4s hold=+37.52pp | ['64.9', '56.8', '47.2', '37.7', '37.4']
+[run] complete
