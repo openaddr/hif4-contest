@@ -230,3 +230,7 @@
 - artifact: dist/solution_v28.zip
 - note: v28 = v27 + tier deepening 14/8/5 -> 20/10/5. v27 readout: +159 @231s (good window; deep-night regime, daytime est ~257). Sweep axis decelerating but unflattened (+478 -> +159). T=1024 stays 5 (weak slice transfer 0.28x, dearest per point). Est +6-7s -> ~238 good / 264 daytime. Value +100-200
 
+## v29 - 2026-08-22 20:25:23
+- artifact: dist/solution_v29.zip
+- note: v29 = v28 + tiers 24/12/5 + C4096 R1024 refinement restored (probe-era direct measurement +30-38 for +7s; the T<=512 cap for C>2048 removed). Sweep axis tail: +478 -> +159 -> +83. Est +10-12s -> ~250 good-window / ~275 daytime. SUBMIT AT GOOD WINDOW ONLY. Expected +85-140
+

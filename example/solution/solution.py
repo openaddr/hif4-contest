@@ -544,7 +544,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # per sweep is T-uniform but cost scales with R: spend depth on small T.
     # v26 online: tiered 10/6/5 paid +478 (small-T judge transfer ~1.0x
     # synthetic, not 0.28x -- slices differ). Curves unflattened by 12.
-    n_sweeps = 20 if T <= 256 else 10 if T <= 512 else 5
+    n_sweeps = 24 if T <= 256 else 12 if T <= 512 else 5
     neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
     d2col = (d * d) * col2    # (T,C) loop-invariant
     if T <= 32:
@@ -983,8 +983,7 @@ def hif4_dynamic_quantize_activation(
             else:
                 values = _gptq_quantize_values(x, unit, u.float())
     # ---- lattice refinement on the final values (transformed space) ----
-    if isinstance(activation_state, dict) and R <= (
-            REFINE_T_MAX if C <= REFINE_MAX_C else 512):
+    if isinstance(activation_state, dict) and R <= REFINE_T_MAX:
         gw = activation_state.get("gw")
         gwf = activation_state.get("gwf")
         if (isinstance(gw, torch.Tensor) and isinstance(gwf, torch.Tensor)
