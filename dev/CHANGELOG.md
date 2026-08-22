@@ -277,3 +277,7 @@
 - cancellation-aware weight quantization: zonotope-projection algebra derived cleanly, but the per-column-embeddable (diag) approximation measures alpha ~1e-3..1e-2 self-aligned fraction = no-op; the real -10.79x cancellation is JOINT (whole-block flip-span), unembeddable in GPTQ's column loop. Guard rejects 0/12; forced variant -16..-21pp/case. Side finding: post-refinement, RTN beats GPTQ on synth fidelity groups 4/4 (ship guard already picks correctly per group). Future variant would need refinement-scored candidate search (~1s/group, too hot for now)
 - mechanism phase 2 scoreboard: lrot DEAD, caw DEAD, rerank pending. Sample-specificity theorem now has a sibling: joint-objective effects do not embed into greedy column loops
 - realistic ceiling without a new idea class: ~25050-25200 (rerank + guarded free-form smoothing + night tiers)
+
+## rerank: NO-SHIP at budget; mechanism phase 2 closed 0/3 - 2026-08-23
+- 10x speedup real (2.47s->162ms, x17 mean) but the gain lives in deep per-try re-refinement: at 0.3s only 59% reproduction (C2048 31%); shipped-anyway value +25-85, overlapping v31's free adaptive tiny-T tier. C<=1024 subset fits (79-96%) but only +15-40 -- not worth the integration
+- PHASE 2 FINAL: lrot DEAD, caw DEAD, rerank DEAD-at-budget. Remaining plays: optional night-tier bump (+40-70, rides 283-290 like #1, deepest-window only); guarded free-form smoothing (fitted-class, guard-protected, unknown value); then DEFENSE MODE (new-test-set hardening: heavy-shape timing sim + shifted-distribution regression)
