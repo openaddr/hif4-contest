@@ -222,3 +222,7 @@
 - artifact: dist/solution_v26.zip
 - note: v26 = v22 + audit2 bundle (5 bit-identical fixes, ~16-18s online: refinement round-loop invariant hoisting + legality-bound caching (C4), weight-refine restructure + W_CHUNK 2048->1024 (C3), numpy rounds for T<=32 (E8), vec threshold 4M->2M (C2), holdout matmul dedupe (C5); agent gate 8/8) + tiered sweeps 10/6/5 (T<=256/512/1024). Sizing per triple-timeout postmortem: ~241-243s good-window / 267-269 daytime, under the ~288 ceiling with bad-minute buffer. Value +130-200 from tiered sweeps on top of 24019
 
+## v27 - 2026-08-22 19:16:14
+- artifact: dist/solution_v27.zip
+- note: v27 = v26 + tier deepening 10/6/5 -> 14/8/5. v26 readout: +478 (24497@259s) vs +130-200 est -> small-T sweep judge transfer ~1.0x synthetic (0.28x was the T1024-slice calibration; slices differ). T=1024 tier stays 5 (memory-bound, dearest per point; night-window item). Est +5-7s -> ~265 daytime / 239 good-window. Value +150-350
+
