@@ -282,17 +282,24 @@ def sub(src, old, new, tag):
 
 
 def main():
-    with open(SOL, encoding="utf-8") as f:
-        src = f.read()
+    with open(SOL, "rb") as f:
+        raw = f.read()
+    src = raw.decode("utf-8")
+    nl = "\r\n" if "\r\n" in src[:2000] else "\n"
+    if nl == "\r\n":
+        # normalize to \n for patching, restore at write time
+        src = src.replace("\r\n", "\n")
     src = sub(src, ROUNDS_NP_OLD, ROUNDS_NP_NEW, "_rounds_np")
     src = sub(src, ACT_LOOP_OLD, ACT_LOOP_NEW, "act loop")
     src = sub(src, W_LOOP_OLD, W_LOOP_NEW, "weight loop")
     anchor = "\n\ndef _refine_act_values("
     src = sub(src, anchor, ROUNDS_ACTIVE_SRC + anchor, "_rounds_active insert")
+    if nl == "\r\n":
+        src = src.replace("\n", "\r\n")
     os.makedirs(OUT_DIR, exist_ok=True)
-    with open(OUT, "w", encoding="utf-8", newline="") as f:
-        f.write(src)
-    print(f"wrote {OUT} ({len(src)} bytes)")
+    with open(OUT, "wb") as f:
+        f.write(src.encode("utf-8"))
+    print(f"wrote {OUT} ({len(src)} chars, endings={nl!r})")
 
 
 if __name__ == "__main__":
