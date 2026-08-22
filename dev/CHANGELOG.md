@@ -251,3 +251,7 @@
 - artifact: dist/solution_v30.zip
 - note: v30 = deep sweep tail unlocked by ceiling correction (limit is 300s per a 292s leaderboard pass; our '~288' was over-inferred): tiers 24/12/5 -> 32/14/6. True-cost ~265-268 good-window (night-only submission; 15-20s bad-minute buffer to 300). Est +65-100 over 24794
 
+
+## P-proxy: NO-SHIP (root-caused) - 2026-08-23
+- fitted P-proxy captures 0% of the +7.8pp oracle and is harmful in every regime/variant (-2..-33pp). ROOT CAUSE: P^T P is SAMPLE-SPECIFIC, not a distribution statistic -- same-distribution samples have near-orthogonal time-Grams (gcos 0.01-0.16); even judge-mini's shared component (0.49-0.87) inverts the sign of the transfer. Machinery validated (exact-Gram proxy == oracle). Attention-P direction closed at ALL levels (flat/fitted/exact-unreachable). The +1850-1950 oracle is confirmed unreachable -> the 1620-1930 gap lives elsewhere (linear side or unknown)
+- remaining pots: v30 on shelf (+65-100); decomp2 pending (grid-re-anchor upper bound; C=8192 never-refined gap -> low-rank Gram revival candidate); #1's 286s = +36s compute over us ~ +200-350 sweep-equivalent
