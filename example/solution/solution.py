@@ -27,6 +27,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from threading import Thread as _Thread
 
 SF_MIN = 2.0 ** -48
 SF_MAX = 49152.0
@@ -306,7 +307,7 @@ ATTN_REFINE_GUARD_MAXT = 512  # stride cap on hold rows for the guard scoring
 ATTN_REFINE_MAX_T = 128     # dynamic-path T cap: only tiers measured to fit
 ATTN_REFINE_FORCE_H = False  # carry H even when rf==0 (bench hook)
 ATTN_GPTQ_ENABLE = True       # bench toggle: False = {table+refine} decomposition
-_REF_ATTN_ROUNDS = 8         # flip passes per sweep (v34 probe paid +10 at r4; v35 depth step)
+_REF_ATTN_ROUNDS = 4         # flip passes per sweep (v35 online: r8 adds only +1 over r4 -- depth saturated)
 
 
 def _upper_cholesky_inv(H: torch.Tensor):
@@ -670,7 +671,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # per sweep is T-uniform but cost scales with R: spend depth on small T.
     # v26 online: tiered 10/6/5 paid +478 (small-T judge transfer ~1.0x
     # synthetic, not 0.28x -- slices differ). Curves unflattened by 12.
-    n_sweeps = 44 if T <= 256 else 20 if T <= 512 else 8
+    n_sweeps = 40 if T <= 256 else 18 if T <= 512 else 7
     neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
     d2col = (d * d) * col2    # (T,C) loop-invariant
     if T <= 32:
@@ -978,6 +979,25 @@ def _loo_maps(vs: torch.Tensor):
     return out[0], out[1], out[2]
 
 
+def _proxy_one(s: torch.Tensor, xf: torch.Tensor, wsub: torch.Tensor,
+               md: int, ref: torch.Tensor) -> float:
+    """One deploy-aware proxy eval (single mode). Dispatch-bound single-core
+    chain (intra-op parallelism measures ~1.0x at these sizes), so callers may
+    overlap several of these on Python threads -- each chain's arithmetic is
+    unchanged, results are bit-identical."""
+    C = s.shape[0]
+    ones = torch.ones(1, C, dtype=torch.float32)
+    xs = xf * s
+    ws = wsub / s
+    if md == 1:
+        xs = _rot_blocks(xs)
+        ws = _rot_blocks(ws)
+    xp = _quant_weight_fast(xs, ones)
+    xq = (xp["sign"] * xp["mant"] * xp["scale_lv3"] * xp["scale_lv2"]
+          * xp["scale_factor"]).flatten(-4, -1)
+    return ((xq @ ws.T - ref) ** 2).mean().item()
+
+
 def _joint_proxy(s: torch.Tensor, xf: torch.Tensor, wsub: torch.Tensor) -> float:
     """DEPLOY-AWARE output-MSE proxy: both sides block-rotated (mode 0 and 1
     both tried, min taken -- the deployed pipeline re-chooses mode per s),
@@ -986,23 +1006,28 @@ def _joint_proxy(s: torch.Tensor, xf: torch.Tensor, wsub: torch.Tensor) -> float
     absorb it; the 77/23 error budget says the act side dominates).
     Validated: ranks the oracle tau=0.5 flattening as the optimum, matching
     the end-to-end pipeline outcome."""
-    C = s.shape[0]
-    ones = torch.ones(1, C, dtype=torch.float32)
     ref = xf @ wsub.T
-    best = None
-    for md in (0, 1):
-        xs = xf * s
-        ws = wsub / s
-        if md == 1:
-            xs = _rot_blocks(xs)
-            ws = _rot_blocks(ws)
-        xp = _quant_weight_fast(xs, ones)
-        xq = (xp["sign"] * xp["mant"] * xp["scale_lv3"] * xp["scale_lv2"]
-              * xp["scale_factor"]).flatten(-4, -1)
-        j = ((xq @ ws.T - ref) ** 2).mean().item()
-        if best is None or j < best:
-            best = j
-    return best
+    return min(_proxy_one(s, xf, wsub, 0, ref), _proxy_one(s, xf, wsub, 1, ref))
+
+
+def _proxy_pair_threaded(s_base: torch.Tensor, s_cand: torch.Tensor,
+                         xh: torch.Tensor, wsub: torch.Tensor):
+    """Guard eval (j_base, j_cand) with the 4 (s, mode) chains overlapped on
+    Python threads: ~1.37x wall vs sequential, bit-identical values."""
+    ref = xh @ wsub.T
+    res = [0.0] * 4
+
+    def _work(i, s, md):
+        res[i] = _proxy_one(s, xh, wsub, md, ref)
+
+    jobs = ((s_base, 0), (s_base, 1), (s_cand, 0), (s_cand, 1))
+    ts = [_Thread(target=_work, args=(i, s, md))
+          for i, (s, md) in enumerate(jobs)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    return min(res[0], res[1]), min(res[2], res[3])
 
 
 def _icm_search(xf: torch.Tensor, wsub: torch.Tensor, s0: torch.Tensor,
@@ -1135,8 +1160,7 @@ def _freeform_s(acts_raw: list, w: torch.Tensor, s_base: torch.Tensor,
         SMOOTH_DEBUG.clear(); SMOOTH_DEBUG.update(
             {"fitted": False, "accepted": False})
         return None
-    j_base = _joint_proxy(s_base, xh, wsub)
-    j_cand = _joint_proxy(s_cand, xh, wsub)
+    j_base, j_cand = _proxy_pair_threaded(s_base, s_cand, xh, wsub)
     ok = (j_cand < 0.998 * j_base and j_cand > 0.0) or not SMOOTH_GUARD
     SMOOTH_DEBUG.clear(); SMOOTH_DEBUG.update(
         {"fitted": True, "accepted": bool(ok),

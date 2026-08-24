@@ -319,3 +319,7 @@
 
 ## v35 readout - 2026-08-24
 - v35: 24998 @285s (+1 over v34) -- attention refinement DEPTH AXIS SATURATED (r4 captured +10, r8 adds only +1). Curve closed: no r20 (5x cost for ~+1-2); attention mechanism finalized at r8 (total +11). 285s = ordinary window (v34's 259 was best-ever); v35 true band ~262-297. Remaining attention extension would be T=512 tier only (~+5-15 for +3-8s, marginal, parked). Next: v36 = +ff_bal smooth (the big fish, +400-750 expected).
+## v37 - 2026-08-24 23:22:33
+- artifact: dist/solution_v37.zip
+- note: v37 = funded smooth package: ff_bal full fidelity + THREADED guard (4 proxy chains overlapped, bit-identical j values, 2.1x guard wall) + linear tiers back to 40/18/7 (-27pt buys ~4s) + attention r8->r4 (-1pt buys ~3s). Smooth true cost measured 136ms/grp local ~= +3s online (agent's +1s used the dead 4.8x rate). v36 timed out on a bad window at ~288s ordinary; v37 targets ordinary ~280, bad ~294. If smooth transfers (+400-750) this banks it in ANY window
+
