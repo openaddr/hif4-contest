@@ -327,3 +327,7 @@
 - v36: 25205 @292s = NEW BEST (+207 over v35, pure ff_bal smooth increment). First attempt timed out (bad window on ~288s-ordinary package); retry passed at 292 (ordinary-to-bad window -- confirms window fragility, v37 funded package is the robust carrier).
 - Analysis: +207 realized vs +400-750 predicted (mini promised +3.85pp/case; realized ~+0.83pp/case avg over 250 linear cases = 21% of mini promise). Pattern matches the attention probe: judge-real subset acceptance / weaker channel structure than mini. Standings: 25205 vs #2 26414 (gap 1209) / #1 26724 (gap 1519).
 - Next: (1) Q/K joint channel balancing for attention (logit-invariant s_q * s_k = 1 compensation -- same channel-statistic class that just transferred); (2) smooth acceptance census on stress shapes (why 21%?); (3) icm guard-leak fix as optional extension.
+## v37 readout - 2026-08-25
+- v37: 25179 @252s (fastest reading ever; great window). Predicted 25177 (= v36 -27 tiers -1 attn depth) -> actual 25179, +-2. The cost-score exchange model is now calibrated to meter precision (tier curve, attention depth, smooth transfer all priced correctly).
+- Artifacts: v36 = 25205 aggressive holder (292s-class, window-fragile); v37 = 25179 robust carrier (huge margin, end-game insurance). User stance: final-run-decides -> aggressive packages are zero-cost gambles; v37 demoted to closing insurance.
+- Waiting: smattn agent (Q/K joint channel balancing + smooth acceptance census + icm fix). Next submission = content increment only (v38), or v36+threading as robust max-score holder for the finale.
