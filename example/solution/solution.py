@@ -36,14 +36,11 @@ E6M2_SIG = (1.0, 1.25, 1.5, 1.75)
 # greedy-lv ranking systematically overshoots sf and loses ~5pp of MSE.
 CAND_GRID = ((0, 1.0), (0, 1.25), (0, 1.5), (0, 1.75), (1, 1.0), (1, 1.25))
 # weights only: full 16-candidate grid (element-wise +2% on real weights)
-CAND_GRID_W = tuple((eo, sig) for eo in (-1, 0, 1, 2) for sig in E6M2_SIG)
 ROW_CHUNK = 2048
 # ablation switches (keep True / non-empty for submission)
 USE_WEIGHTS = True
 LV_REFINE = True
 ALPHA_GRID = (0.0, 0.15, 0.3, 0.5)
-BETA_GRID = (0.0, 0.25)
-GAMMA_GRID = (0.0, 0.15, 0.3, 0.5)
 
 
 def dequantize_nvfp4(quant_float, scale_float, blk_size=16):
@@ -255,7 +252,6 @@ GPTQ_DAMP = 0.1
 # Gram image of the residual (never materialized; maintained via rank-1
 # updates). Greedy top-1 per row is exact coordinate descent (rows are
 # independent); flip-all variants diverge and must not be used.
-REFINE_ACT_SWEEPS = 6       # activation sweeps (3 sweeps = +1.2pp, 6 = +1.8pp)
 REFINE_W_SWEEPS = 1         # weight sweeps (hold-out curve flat after sweep 1)
 REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
 REFINE_T_MAX = 1024         # activation rows; skip act refinement above this.
@@ -274,14 +270,6 @@ REFINE_W_HOLD_ROWS = 1024   # hold-out rows for the weight guard
 REFINE_W_CHUNK = 1024       # weight-row chunk for the greedy sweep
                             # (rows independent -> chunk size bit-inert;
                             # 1024 measured fastest, best cache locality)
-
-# --- cross-call Q/K/V carry (judge calls q, k, v sequentially per test) ---
-_QKV_CARRY: dict = {}
-_VCOMP = {"n": 0, "el": 0.0}
-_VCOMP_T_CAP = 2048
-_VCOMP_LAM = 1e-4
-_VCOMP_CLAMP = 0.5
-_VCOMP_BUDGET = 150.0   # projected local seconds across all v-calls
 
 
 def _upper_cholesky_inv(H: torch.Tensor):
@@ -770,16 +758,6 @@ def _quantize_weighted(x2d: torch.Tensor, wgt: torch.Tensor, grid=CAND_GRID) -> 
     return cat
 
 
-def _uniform_weights(R: int, C: int, device) -> torch.Tensor:
-    return torch.ones(R, C, dtype=torch.float32, device=device)
-
-
-def _safe_wgt(w, R, C):
-    if isinstance(w, torch.Tensor) and tuple(w.shape) == (R, C):
-        return w.float()
-    return _uniform_weights(R, C, torch.device("cpu"))
-
-
 # =============================================================================
 # 1. Linear calibration + Weight quantization
 # =============================================================================
@@ -1136,9 +1114,10 @@ def hif4_calibration_attention(
     R = _make_R(dh)
 
     hold = calib_qkv_list[-1]
-    q = dequantize_nvfp4(*hold["q"]).float()
-    k = dequantize_nvfp4(*hold["k"]).float()
-    v = dequantize_nvfp4(*hold["v"]).float()
+    qf_full = dequantize_nvfp4(*hold["q"]).float()
+    kf_full = dequantize_nvfp4(*hold["k"]).float()
+    vb_full = dequantize_nvfp4(*hold["v"]).float()
+    q, k, v = qf_full, kf_full, vb_full
     stride = max(1, (q.shape[0] + 511) // 512)
     q = q[::stride].contiguous()
     k = k[::stride].contiguous()
@@ -1196,9 +1175,9 @@ def hif4_calibration_attention(
 
     # ---- guard setup: hold sample quantized ONCE ----
     if qk_ready:
-        qf_ = dequantize_nvfp4(*hold["q"]).float()
-        kf_ = dequantize_nvfp4(*hold["k"]).float()
-        vb0 = dequantize_nvfp4(*hold["v"]).float()
+        qf_ = qf_full
+        kf_ = kf_full
+        vb0 = vb_full
         if rot and R is not None:
             qf_rot = (qf_.view(T0, qh, dh) @ R).reshape(T0, -1)
             kf_rot = (kf_.view(T0, kvh, dh) @ R).reshape(T0, -1)
@@ -1285,54 +1264,6 @@ def _dyn_table(x: torch.Tensor, state: dict | None, has_scale: bool) -> dict[str
     return _quantize_weighted(xs, wgt)
 
 
-def _v_compensate(v, q_in, q_hat, k_in, k_hat, kvh, dh):
-    """Re-quantize V so attention(q_hat, k_hat, Vh) tracks attention(q, k, V).
-
-    The Q/K-induced output error (Phat - P) @ V is known exactly at V's call
-    (original + quantized q/k stashed from the earlier calls); V's target is
-    shifted by its least-squares projection so the representable part cancels:
-        V* = (sum_h Phat^T Phat + lam I)^-1 (sum_h Phat^T P) V  per kv head,
-    then quantized toward V* with Hessian sum_h Phat^T Phat. The GPTQ step is
-    essential: plain rounding of V* is worse than plain rounding of V.
-    Per-head loop bounds memory (one (T, T) prob matrix at a time).
-    """
-    T, C = v.shape
-    qh = q_in.shape[1] // dh
-    rep = qh // kvh
-    qf = q_in.view(T, qh, dh).transpose(0, 1)
-    qhf = q_hat.view(T, qh, dh).transpose(0, 1)
-    kf = k_in.view(T, kvh, dh).transpose(0, 1)
-    khf = k_hat.view(T, kvh, dh).transpose(0, 1)
-    G = torch.zeros(kvh, T, T, dtype=torch.float64)
-    Cm = torch.zeros(kvh, T, T, dtype=torch.float64)
-    for h in range(qh):
-        hv = h // rep
-        sc = (qf[h] @ kf[hv].T) / (dh ** 0.5)
-        sch = (qhf[h] @ khf[hv].T) / (dh ** 0.5)
-        P = torch.softmax(sc, dim=-1).double()
-        Ph = torch.softmax(sch, dim=-1).double()
-        G[hv] += Ph.T @ Ph
-        Cm[hv] += Ph.T @ P
-    lam = _VCOMP_LAM * G.diagonal(dim1=-2, dim2=-1).mean(-1).view(kvh, 1, 1)
-    B = torch.linalg.solve(G + lam, Cm)
-    vs = torch.bmm(B, v.view(T, kvh, dh).permute(1, 0, 2).double()) \
-        .permute(1, 0, 2).reshape(T, C).float().contiguous()
-    dv = vs - v
-    dn = (dv.norm() / v.norm().clamp_min(1e-12)).item()
-    if dn > _VCOMP_CLAMP:
-        vs = v + dv * (_VCOMP_CLAMP / dn)
-    p = _quantize_weighted(vs, torch.ones(1, C))
-    unit = _params_unit_flat(p)
-    xs = vs.view(T, kvh, dh).permute(1, 2, 0).contiguous()
-    us = unit.view(T, kvh, dh).permute(1, 2, 0).contiguous()
-    U = _upper_cholesky_inv(G.float())
-    if U is not None:
-        qs = _gptq_quantize_batched(xs, us, U)
-        v_flat = qs.permute(2, 0, 1).reshape(T, C)
-        return _values_to_params(v_flat.contiguous(), p)
-    return p
-
-
 def _dyn_qk(quant, scale, state, num_heads, head_dim, role=None):
     x = dequantize_nvfp4(quant, scale).float()
     rot = isinstance(state, dict) and state.get("rot") == 1
@@ -1360,37 +1291,11 @@ def _dyn_qk(quant, scale, state, num_heads, head_dim, role=None):
             qs = _gptq_quantize_batched(xs, us, u_full)
             values = qs.permute(1, 0, 2).reshape(T, -1).contiguous()
             p = _values_to_params(values, p)
-    if role is not None:
-        if role == "q":
-            _QKV_CARRY.clear()
-        if values is None:
-            values = _deq_params(p)
-        _QKV_CARRY[role] = (x.contiguous(), values.contiguous())
     return p
 
 
 def _dyn_v(quant, scale, state, kvh, dh):
-    import time as _time
     x = dequantize_nvfp4(quant, scale).float()
-    T, C = x.shape
-    qc = _QKV_CARRY.get("q")
-    kc = _QKV_CARRY.get("k")
-    budget_left = (_VCOMP["el"] / max(_VCOMP["n"], 1)) * (250 - _VCOMP["n"]) < _VCOMP_BUDGET
-    if (isinstance(qc, tuple) and isinstance(kc, tuple)
-            and qc[0].shape[0] == T and kc[0].shape[0] == T
-            and qc[0].shape[1] % dh == 0 and kc[1].shape[1] == C
-            and qc[0].shape[1] // dh % kvh == 0
-            and T <= _VCOMP_T_CAP and _VCOMP["n"] < 250 and budget_left):
-        t0 = _time.perf_counter()
-        try:
-            out = _v_compensate(x, qc[0], qc[1], kc[0], kc[1], kvh, dh)
-            _VCOMP["n"] += 1
-            _VCOMP["el"] += _time.perf_counter() - t0
-            _QKV_CARRY.clear()
-            return out
-        except Exception:
-            pass
-    _QKV_CARRY.clear()
     return _dyn_table(x, state, has_scale=False)
 
 
