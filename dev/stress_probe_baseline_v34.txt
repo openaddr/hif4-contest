@@ -1,0 +1,78 @@
+[probe] c1024_n8192 C=1024 N=8192: cal 2.2s peakRSS 0.00GiB state 8MiB
+        state[s:(1024,)/float32/0MiB/finite; mode=1; u_act:(1024, 1024)/float32/4MiB/finite; g=1; order:(1024,)/int64/0MiB/finite; gw:(1024, 1024)/bfloat16/2MiB/finite; gwf:(1024, 1024)/bfloat16/2MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.15s errors=NONE
+        dyn[1] T=1024 0.53s errors=NONE
+[probe] c2048_n8192 C=2048 N=8192: cal 5.0s peakRSS 0.00GiB state 32MiB
+        state[s:(2048,)/float32/0MiB/finite; mode=1; u_act:(2048, 2048)/float32/16MiB/finite; g=1; order:(2048,)/int64/0MiB/finite; gw:(2048, 2048)/bfloat16/8MiB/finite; gwf:(2048, 2048)/bfloat16/8MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=10 0.18s errors=NONE
+        dyn[1] T=128 0.39s errors=NONE
+        dyn[2] T=512 0.94s errors=NONE
+        dyn[3] T=1024 1.04s errors=NONE
+[probe] c2048_n1024 C=2048 N=1024: cal 1.2s peakRSS 0.00GiB state 32MiB
+        state[s:(2048,)/float32/0MiB/finite; mode=1; u_act:(2048, 2048)/float32/16MiB/finite; g=1; order:(2048,)/int64/0MiB/finite; gw:(2048, 2048)/bfloat16/8MiB/finite; gwf:(2048, 2048)/bfloat16/8MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.40s errors=NONE
+        dyn[1] T=512 0.97s errors=NONE
+[probe] c2048_wspike C=2048 N=8192: cal 5.0s peakRSS 0.00GiB state 32MiB
+        state[s:(2048,)/float32/0MiB/finite; mode=1; u_act:(2048, 2048)/float32/16MiB/finite; g=1; order:(2048,)/int64/0MiB/finite; gw:(2048, 2048)/bfloat16/8MiB/finite; gwf:(2048, 2048)/bfloat16/8MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=512 0.99s errors=NONE
+        dyn[1] T=1024 0.97s errors=NONE
+[probe] c2048_bigT C=2048 N=8192: cal 5.0s peakRSS 0.00GiB state 32MiB
+        state[s:(2048,)/float32/0MiB/finite; mode=1; u_act:(2048, 2048)/float32/16MiB/finite; g=1; order:(2048,)/int64/0MiB/finite; gw:(2048, 2048)/bfloat16/8MiB/finite; gwf:(2048, 2048)/bfloat16/8MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=512 0.97s errors=NONE
+        dyn[1] T=2048 0.71s errors=NONE
+[probe] c2048_tiny C=2048 N=4096: cal 0.7s peakRSS 0.00GiB state 16MiB
+        state[s:(2048,)/float32/0MiB/finite; mode=0; u_act=None; g=0; order=None; gw:(2048, 2048)/bfloat16/8MiB/finite; gwf:(2048, 2048)/bfloat16/8MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=10 0.16s errors=NONE
+        dyn[1] T=128 0.50s errors=NONE
+[probe] c4096_n4096 C=4096 N=4096: cal 6.2s peakRSS 0.00GiB state 128MiB
+        state[s:(4096,)/float32/0MiB/finite; mode=1; u_act:(4096, 4096)/float32/64MiB/finite; g=1; order:(4096,)/int64/0MiB/finite; gw:(4096, 4096)/bfloat16/32MiB/finite; gwf:(4096, 4096)/bfloat16/32MiB/finite; tmax=512]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.93s errors=NONE
+        dyn[1] T=512 1.89s errors=NONE
+        dyn[2] T=1024 0.77s errors=NONE
+[probe] c4096_n8192 C=4096 N=8192: cal 10.0s peakRSS 0.00GiB state 128MiB
+        state[s:(4096,)/float32/0MiB/finite; mode=1; u_act:(4096, 4096)/float32/64MiB/finite; g=1; order:(4096,)/int64/0MiB/finite; gw:(4096, 4096)/bfloat16/32MiB/finite; gwf:(4096, 4096)/bfloat16/32MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.95s errors=NONE
+        dyn[1] T=1024 2.23s errors=NONE
+[probe] c4096_spiky C=4096 N=4096: cal 6.2s peakRSS 0.00GiB state 128MiB
+        state[s:(4096,)/float32/0MiB/finite; mode=1; u_act:(4096, 4096)/float32/64MiB/finite; g=1; order:(4096,)/int64/0MiB/finite; gw:(4096, 4096)/bfloat16/32MiB/finite; gwf:(4096, 4096)/bfloat16/32MiB/finite; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=512 1.94s errors=NONE
+        dyn[1] T=1024 2.16s errors=NONE
+[probe] c4096_flat C=4096 N=4096: cal 6.0s peakRSS 0.00GiB state 128MiB
+        state[s:(4096,)/float32/0MiB/finite; mode=0; u_act:(4096, 4096)/float32/64MiB/finite; g=1; order:(4096,)/int64/0MiB/finite; gw:(4096, 4096)/bfloat16/32MiB/finite; gwf:(4096, 4096)/bfloat16/32MiB/finite; tmax=512]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.88s errors=NONE
+        dyn[1] T=1024 0.78s errors=NONE
+[probe] c6144_n6144 C=6144 N=6144: cal 12.8s peakRSS 0.00GiB state 144MiB
+        state[s:(6144,)/float32/0MiB/finite; mode=1; u_act:(6144, 6144)/float32/144MiB/finite; g=1; order:(6144,)/int64/0MiB/finite; gw=None; gwf=None; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.42s errors=NONE
+        dyn[1] T=1024 1.25s errors=NONE
+[probe] c8192_n1024 C=8192 N=1024: cal 10.8s peakRSS 0.00GiB state 256MiB
+        state[s:(8192,)/float32/0MiB/finite; mode=1; u_act:(8192, 8192)/float32/256MiB/finite; g=1; order:(8192,)/int64/0MiB/finite; gw=None; gwf=None; tmax=512]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.39s errors=NONE
+        dyn[1] T=512 0.93s errors=NONE
+[probe] c8192_n8192 C=8192 N=8192: cal 25.4s peakRSS 0.00GiB state 256MiB
+        state[s:(8192,)/float32/0MiB/finite; mode=1; u_act:(8192, 8192)/float32/256MiB/finite; g=1; order:(8192,)/int64/0MiB/finite; gw=None; gwf=None; tmax=512]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.42s errors=NONE
+        dyn[1] T=1024 2.00s errors=NONE
+[probe] c8192_n8192_spiky C=8192 N=8192: cal 25.3s peakRSS 0.00GiB state 256MiB
+        state[s:(8192,)/float32/0MiB/finite; mode=1; u_act:(8192, 8192)/float32/256MiB/finite; g=1; order:(8192,)/int64/0MiB/finite; gw=None; gwf=None; tmax=1024]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.42s errors=NONE
+        dyn[1] T=1024 2.01s errors=NONE
+[probe] c8192_n8192_flat C=8192 N=8192: cal 24.8s peakRSS 0.00GiB state 256MiB
+        state[s:(8192,)/float32/0MiB/finite; mode=0; u_act:(8192, 8192)/float32/256MiB/finite; g=1; order:(8192,)/int64/0MiB/finite; gw=None; gwf=None; tmax=512]
+        weight_params errors=NONE state errors=NONE
+        dyn[0] T=128 0.40s errors=NONE
+        dyn[1] T=1024 1.93s errors=NONE
