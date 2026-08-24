@@ -323,3 +323,7 @@
 - artifact: dist/solution_v37.zip
 - note: v37 = funded smooth package: ff_bal full fidelity + THREADED guard (4 proxy chains overlapped, bit-identical j values, 2.1x guard wall) + linear tiers back to 40/18/7 (-27pt buys ~4s) + attention r8->r4 (-1pt buys ~3s). Smooth true cost measured 136ms/grp local ~= +3s online (agent's +1s used the dead 4.8x rate). v36 timed out on a bad window at ~288s ordinary; v37 targets ordinary ~280, bad ~294. If smooth transfers (+400-750) this banks it in ANY window
 
+## v36 readout - 2026-08-24
+- v36: 25205 @292s = NEW BEST (+207 over v35, pure ff_bal smooth increment). First attempt timed out (bad window on ~288s-ordinary package); retry passed at 292 (ordinary-to-bad window -- confirms window fragility, v37 funded package is the robust carrier).
+- Analysis: +207 realized vs +400-750 predicted (mini promised +3.85pp/case; realized ~+0.83pp/case avg over 250 linear cases = 21% of mini promise). Pattern matches the attention probe: judge-real subset acceptance / weaker channel structure than mini. Standings: 25205 vs #2 26414 (gap 1209) / #1 26724 (gap 1519).
+- Next: (1) Q/K joint channel balancing for attention (logit-invariant s_q * s_k = 1 compensation -- same channel-statistic class that just transferred); (2) smooth acceptance census on stress shapes (why 21%?); (3) icm guard-leak fix as optional extension.
