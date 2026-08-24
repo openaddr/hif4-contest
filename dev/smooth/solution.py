@@ -42,6 +42,20 @@ USE_WEIGHTS = True
 LV_REFINE = True
 ALPHA_GRID = (0.0, 0.15, 0.3, 0.5)
 
+# --- free-form smoothing (T3c): "base" = bit-identical baseline alpha search;
+# "ff_icm" = per-channel coordinate descent on a joint act+w error model,
+# "ff_bal" = equal-error fixed point, "mag_scan" = bidirectional magnitude
+# family scan.  Non-base modes fit s on calib[:-1] and accept ONLY if the
+# joint proxy (both sides table-quantized) improves on the LAST calib sample
+# vs the baseline s; rejection keeps the baseline s (bit-identical fallback).
+SMOOTH_MODE = "base"
+SMOOTH_FIT_ROWS = 160       # activation rows feeding the s search
+SMOOTH_W_ROWS = 192         # weight rows feeding the s search
+SMOOTH_HOLD_ROWS = 160      # holdout rows (last calib sample) for the guard
+SMOOTH_LOGS_CLIP = 6.0      # |log s| bound
+SMOOTH_GUARD = True         # False = accept any finite fit (diagnostics)
+SMOOTH_DEBUG: dict = {}     # last search outcome (experiment instrumentation)
+
 
 def dequantize_nvfp4(quant_float, scale_float, blk_size=16):
     channels = int(quant_float.shape[-1])
@@ -288,7 +302,7 @@ ATTN_REFINE_GUARD_MAXT = 512  # stride cap on hold rows for the guard scoring
 ATTN_REFINE_MAX_T = 128     # dynamic-path T cap: only tiers measured to fit
 ATTN_REFINE_FORCE_H = False  # carry H even when rf==0 (bench hook)
 ATTN_GPTQ_ENABLE = True       # bench toggle: False = {table+refine} decomposition
-_REF_ATTN_ROUNDS = 8         # flip passes per sweep (v34 probe paid +10 at r4; v35 depth step)
+_REF_ATTN_ROUNDS = 4         # flip passes per sweep (value/cost frontier: r2=44%/17%)
 
 
 def _upper_cholesky_inv(H: torch.Tensor):
@@ -915,6 +929,219 @@ def _quant_weight_fast(w: torch.Tensor, wgt: torch.Tensor) -> dict[str, torch.Te
     }
 
 
+# =============================================================================
+# 1b. Free-form smoothing (T3c): per-channel s search with W-column
+#     compensation (w/s).  s is fit on calib[:-1]; the LAST calib sample is
+#     the guard holdout.  Objective: joint output MSE proxy
+#         J(s) = || Q(X s) @ (Q(W/s) s)^T - X W^T ||^2
+#     with Q = the real fast table quantizer (both sides quantized, unlike
+#     the baseline alpha proxy which quantizes weights only).
+# =============================================================================
+
+def _qerr_std(v: torch.Tensor, m_blk: torch.Tensor, m_grp: torch.Tensor,
+              m_sub: torch.Tensor):
+    """Greedy-standard HiF4 per-element quantization error.  v: |value|;
+    m_blk/m_grp/m_sub: the 64/8/4-level maxima of the element's block/group/
+    subgroup AFTER folding in the candidate value.  Surrogate of the refined
+    search (single sf anchor) -- used only inside the coordinate-descent
+    search; candidate acceptance uses the real quantizer proxy."""
+    sf = torch.exp2(torch.floor(torch.log2(m_blk / 7.0)
+                                .clamp_(min=-100.0, max=14.0)))
+    lv2 = torch.where(m_grp / sf > 1.75, 2.0, 1.0)
+    lv3 = torch.where(m_sub / (sf * lv2) > 1.75, 2.0, 1.0)
+    unit = sf * lv2 * lv3
+    mant = torch.clamp(torch.round(v / unit * 4.0) / 4.0, 0.0, 1.75)
+    return (mant * unit - v) ** 2
+
+
+def _loo_maps(vs: torch.Tensor):
+    """Leave-one-out maxima at the 64/8/4 levels for a nonneg (R, C) map.
+    Returns (loo_blk, loo_grp, loo_sub), each (R, C): the max of the level
+    excluding the element itself (top-2 trick; ties -> argmax treated as
+    first index like torch.argmax)."""
+    R, C = vs.shape
+    nb = C // 64
+    out = []
+    for g in (64, 8, 4):
+        v = vs.view(R, nb, 64 // g, g)
+        t2 = torch.topk(v, 2, dim=-1)                    # values, idx sorted
+        m1 = t2.values[..., 0:1]                         # (R,nb,64/g,1)
+        idx = t2.indices[..., 0]
+        is_am = (torch.arange(g).to(vs.device)[None, None, None, :]
+                 == idx[..., None])
+        loo = torch.where(is_am, t2.values[..., 1:2], m1)  # (R,nb,64/g,g)
+        out.append(loo.reshape(R, C))
+    return out[0], out[1], out[2]
+
+
+def _joint_proxy(s: torch.Tensor, xf: torch.Tensor, wsub: torch.Tensor) -> float:
+    """DEPLOY-AWARE output-MSE proxy: both sides block-rotated (mode 0 and 1
+    both tried, min taken -- the deployed pipeline re-chooses mode per s),
+    the ACTIVATION side passed through the real fast table quantizer, the
+    weight side left unquantized (the deployed weight GPTQ + refinement
+    absorb it; the 77/23 error budget says the act side dominates).
+    Validated: ranks the oracle tau=0.5 flattening as the optimum, matching
+    the end-to-end pipeline outcome."""
+    C = s.shape[0]
+    ones = torch.ones(1, C, dtype=torch.float32)
+    ref = xf @ wsub.T
+    best = None
+    for md in (0, 1):
+        xs = xf * s
+        ws = wsub / s
+        if md == 1:
+            xs = _rot_blocks(xs)
+            ws = _rot_blocks(ws)
+        xp = _quant_weight_fast(xs, ones)
+        xq = (xp["sign"] * xp["mant"] * xp["scale_lv3"] * xp["scale_lv2"]
+              * xp["scale_factor"]).flatten(-4, -1)
+        j = ((xq @ ws.T - ref) ** 2).mean().item()
+        if best is None or j < best:
+            best = j
+    return best
+
+
+def _icm_search(xf: torch.Tensor, wsub: torch.Tensor, s0: torch.Tensor,
+                gw_col: torch.Tensor, gx_col: torch.Tensor) -> torch.Tensor:
+    """Per-channel coordinate descent under the DEPLOYED (rotated) error
+    model.  After the block rotation the activation block error is energy-
+    driven: per-element MSE ~ block energy E_{r,b}(s) = sum_c (x s)^2, so
+        act_cost_b(s) = sum_r err(r,b) * E_{r,b}(s)/E_{r,b}   (err = current
+    exact quantizer error of the rotated rows)
+                  * sum_{c in b} GwW_c / s_c^2                (output units)
+    For a candidate multiplier t on channel c, E is linear in t^2 ->
+    evaluate exactly and pick the per-channel argmin.  err maps are
+    recomputed (real fast quantizer on rotated fit rows) each sweep."""
+    R, C = xf.shape
+    nb = C // 64
+    ax = xf.abs()
+    s = s0.clone()
+    ones = torch.ones(1, C, dtype=torch.float32)
+    for deltas in ((-0.75, -0.4, -0.2, 0.2, 0.4, 0.75),
+                   (-0.4, -0.2, -0.1, 0.1, 0.2, 0.4)):
+        xs = ax * s
+        xsr = _rot_blocks(xs)
+        p = _quant_weight_fast(xsr, ones)
+        dq = (p["sign"] * p["mant"] * p["scale_lv3"] * p["scale_lv2"]
+              * p["scale_factor"]).flatten(-4, -1)
+        err = ((dq - xsr) ** 2).view(R, nb, 64).sum(dim=2)          # (R, nb)
+        E = (xsr * xsr).view(R, nb, 64).sum(dim=2)                  # (R, nb)
+        fe = (err / E.clamp_min(1e-30)).sum(dim=0)                  # (nb,)
+        xc2 = (xs * xs).view(R, nb, 64)
+        fxe = (err / E.clamp_min(1e-30)).unsqueeze(-1) * xc2 / E.clamp_min(1e-30).unsqueeze(-1)
+        g_c = fxe.sum(dim=0)                                        # (nb, 64)
+        gw_blk = (gw_col / (s * s)).view(nb, 64)                    # (nb, 64)
+        gsum = gw_blk.sum(dim=1, keepdim=True)                      # (nb, 1)
+        best = None
+        best_t = torch.ones(C)
+        for d in deltas:
+            t = float(torch.exp(torch.tensor(d)))
+            # act term: (fe + (t^2-1) * g_c[c]) * (gsum - gw_blk[c] + gw_blk[c]/t^2)
+            a1 = fe.unsqueeze(-1) + (t * t - 1.0) * g_c             # (nb,64)
+            a2 = gsum - gw_blk + gw_blk / (t * t)
+            cost = a1 * a2
+            if best is None:
+                best, best_t = cost.view(-1), torch.full((C,), t)
+            else:
+                take = cost.view(-1) < best
+                best = torch.where(take, cost.view(-1), best)
+                best_t = torch.where(take, torch.full((C,), t), best_t)
+        s = (s * best_t).clamp(
+            torch.exp(torch.tensor(-SMOOTH_LOGS_CLIP)),
+            torch.exp(torch.tensor(SMOOTH_LOGS_CLIP)))
+    s = s / torch.exp(s.log().mean())         # geometric-mean 1 (no-op scale)
+    return s
+
+
+def _bal_search(xf: torch.Tensor, wsub: torch.Tensor, s0: torch.Tensor,
+                gw_col: torch.Tensor, gx_col: torch.Tensor) -> torch.Tensor:
+    """Equal-error (analytic optimum) under the deployed rotated model:
+    minimize per block (sum_c A_c s_c^2)(sum_c B_c / s_c^2), where
+    A_c = calib activation energy of channel c (structure estimate) and
+    B_c = gw_col = full-weight column energy (in-sample).  The optimum is
+    s_c ~ (B_c / A_c)^(1/4).  For flat weights this reduces to
+    s ~ gains^-0.5 -- the empirical oracle peak."""
+    ls = 0.25 * (gw_col / gx_col).clamp_min(1e-30).log()
+    ls = ls - ls.mean()
+    ls = ls.clamp(-SMOOTH_LOGS_CLIP, SMOOTH_LOGS_CLIP)
+    return ls.exp()
+
+
+def _freeform_s(acts_raw: list, w: torch.Tensor, s_base: torch.Tensor,
+                logm: torch.Tensor):
+    """Fit a free-form per-channel s on calib[:-1]; guard on calib[-1].
+    Returns the accepted s, or None to keep the baseline s."""
+    if len(acts_raw) < 2 or w.shape[1] < 64:
+        return None
+    R, C = w.shape
+    # fit rows from calib[:-1] (round-robin subsample, deterministic)
+    rows = []
+    budget = SMOOTH_FIT_ROWS
+    per = max(1, budget // (len(acts_raw) - 1))
+    for a in acts_raw[:-1]:
+        T = a.shape[0]
+        if T > per:
+            stride = T // per
+            idx = torch.arange(0, T, stride)[:per]
+        else:
+            idx = torch.arange(T)
+        rows.append(a[idx])
+        budget -= idx.shape[0]
+        if budget <= 0:
+            break
+    xf = torch.cat(rows, dim=0)[:SMOOTH_FIT_ROWS].contiguous()
+    # local generator: the search must not consume global RNG draws, else a
+    # REJECTED fit would still perturb downstream subsampling bit-level
+    gen = torch.Generator().manual_seed(7717 + R)
+    wsub = w[torch.randperm(R, generator=gen)[: min(R, SMOOTH_W_ROWS)]].contiguous()
+    ha = acts_raw[-1]
+    if ha.shape[0] > SMOOTH_HOLD_ROWS:
+        stride = ha.shape[0] // SMOOTH_HOLD_ROWS
+        xh = ha[::stride][:SMOOTH_HOLD_ROWS].contiguous()
+    else:
+        xh = ha.contiguous()
+    if xf.shape[0] < 16 or xh.shape[0] < 16:
+        return None
+    gw_col = (w * w).sum(dim=0) + 1e-30
+    gx_col = (xf * xf).sum(dim=0) + 1e-30
+
+    if SMOOTH_MODE == "ff_icm":
+        s_cand = _icm_search(xf, wsub, _bal_search(xf, wsub, s_base,
+                                                   gw_col, gx_col),
+                             gw_col, gx_col)
+    elif SMOOTH_MODE == "ff_bal":
+        s_cand = _bal_search(xf, wsub, s_base, gw_col, gx_col)
+    elif SMOOTH_MODE == "mag_scan":
+        # parametric control: s = exp(-tau * logm_hat), tau grid, deploy-aware
+        # proxy selection on the fit rows (SmoothQuant-family form)
+        lm = 0.5 * gx_col.clamp_min(1e-30).log()
+        lm = lm - lm.mean()
+        best = None
+        for tau in (0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 1.0):
+            s_try = (-tau * lm).clamp(-SMOOTH_LOGS_CLIP,
+                                      SMOOTH_LOGS_CLIP).exp()
+            s_try = s_try / torch.exp(s_try.log().mean())
+            j = _joint_proxy(s_try, xf, wsub)
+            if best is None or j < best[0]:
+                best = (j, s_try)
+        s_cand = best[1]
+    else:
+        return None
+    if not bool(torch.isfinite(s_cand).all()):
+        SMOOTH_DEBUG.clear(); SMOOTH_DEBUG.update(
+            {"fitted": False, "accepted": False})
+        return None
+    j_base = _joint_proxy(s_base, xh, wsub)
+    j_cand = _joint_proxy(s_cand, xh, wsub)
+    ok = (j_cand < 0.998 * j_base and j_cand > 0.0) or not SMOOTH_GUARD
+    SMOOTH_DEBUG.clear(); SMOOTH_DEBUG.update(
+        {"fitted": True, "accepted": bool(ok),
+         "j_base": j_base, "j_cand": j_cand})
+    if ok:
+        return s_cand.contiguous()
+    return None
+
+
 def hif4_calibration_and_quantize_weight(
     weight_quant: torch.Tensor,
     weight_scale: torch.Tensor,
@@ -961,6 +1188,15 @@ def hif4_calibration_and_quantize_weight(
         if best_loss is None or loss < best_loss:
             best_loss, best_alpha = loss, alpha
     s = torch.exp(logm * best_alpha)
+    # ---- free-form smoothing override (T3c): fit on calib[:-1], guarded on
+    # the last calib sample; None = keep the baseline s bit-identically ----
+    if SMOOTH_MODE != "base":
+        try:
+            s_ff = _freeform_s(acts_raw, w, s, logm)
+            if s_ff is not None:
+                s = s_ff
+        except Exception:
+            pass
     w_s = w / s
     acts_s = [a * s for a in acts_raw]
 

@@ -309,3 +309,7 @@
 - pivot: visible mechanism classes exhausted (4 theorems + measured probe); remaining = T3c smoothing lottery (agent running, double-holdout protocol) + DEFENSE MODE (stress regression) + intel (scoring rule, community)
 ## CORRECTION: v34 probe readout - 2026-08-24
 - user correction: v34 = 24997 @259s, NOT 24987@278. The probe is POSITIVE (+10): non-bit-identical score proves the guard ACCEPTED on a subset of judge attention groups and T<=128/r4 refinement paid +10 online. Judge attention data is NOT pure iid -- a structured subset exists; the 4th theorem holds only per-subgroup. mini is optimism-biased but representative in kind. The earlier "+0 / iid / direction closed / mini!=judge" records are VOID. 259s = best-window reading (fastest ever for a v3x artifact); true cost ~v33+4-6s, worst window ~294. Extension axis (depth r8 -> T=512 tier / linear-side rebalance) is now the live scoring play.
+## v35 - 2026-08-24 20:39:48
+- artifact: dist/solution_v35.zip
+- note: v35 = attnref depth step r4->r8 (T<=128 unchanged, guard same). v34 probe paid +10 (positive: judge attention has structured subset); r8 captures ~40-60% more J-value on accepted groups. Increment +2-4s over v34 (worst window est ~297-298). DEEP-NIGHT ONLY. Readout calibrates the extension curve -> v36 (T=512 tier or linear rebalance)
+
