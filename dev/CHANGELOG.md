@@ -317,3 +317,5 @@
 - artifact: dist/solution_v36.zip
 - note: v36 = v35 + free-form smoothing ff_bal (T3c SHIP): closed-form per-channel s_c~(GwW/GxA)^(1/4) with deploy-aware holdout guard, W-column compensation, local-RNG bit-safe fallback. Verified: base-mode bit-identical v35; mini real-test output-SSE -36.5pct; agent double-holdout B-side +5.46pp 0/64 negative; cost +~1s. Expected +400-750 online (conservative +2pp x 250 x 0.79). DEEP-NIGHT ONLY
 
+## v35 readout - 2026-08-24
+- v35: 24998 @285s (+1 over v34) -- attention refinement DEPTH AXIS SATURATED (r4 captured +10, r8 adds only +1). Curve closed: no r20 (5x cost for ~+1-2); attention mechanism finalized at r8 (total +11). 285s = ordinary window (v34's 259 was best-ever); v35 true band ~262-297. Remaining attention extension would be T=512 tier only (~+5-15 for +3-8s, marginal, parked). Next: v36 = +ff_bal smooth (the big fish, +400-750 expected).
