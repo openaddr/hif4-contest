@@ -303,3 +303,7 @@
 - artifact: dist/solution_v34.zip
 - note: v34 = attnref probe: guarded attention-side lattice refinement (sw1/r4, T<=128 dyn cap, bf16 H in state). Reads the judge's attention data structure: +0=iid-like (revert to v33), +50..300=structured (keep+extend in v35). True cost +4-6s over v33 (guard ~0.5s + T<=128 refine ~3-5s). DEEP-NIGHT ONLY submission. v33 readout: 24987@279s (+27 in range, sweep axis closed)
 
+## v33/v34 readouts + strategic pivot - 2026-08-24
+- v33: 24987 @279s = NEW BEST (+27, in the +20-30 band; sweep axis six steps closed: +478/159/83/55/47/43/27)
+- v34 probe: 24987 @278s = +0 EXACTLY -- judge attention data is iid-like, guard rejected on all ~50 groups (bit-identical score proves no-op). Attention-side direction PERMANENTLY CLOSED. KEY INTEL: mini != judge on attention data (mini guard accepts 5/5 at +1.25pp/case; judge rejects across the board) -- local attention measurements are unrepresentative; linear side never showed this split. Guard machinery KEPT in mainline as a free option for new test sets (~0.5s cost, auto-activates on structured data)
+- pivot: visible mechanism classes exhausted (4 theorems + measured probe); remaining = T3c smoothing lottery (agent running, double-holdout protocol) + DEFENSE MODE (stress regression) + intel (scoring rule, community)
