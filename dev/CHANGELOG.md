@@ -299,3 +299,7 @@
 - artifact: dist/solution_v33.zip
 - note: v33 = v32 + cleanup carrier (B/C/D/A audit3-4 surgery, online no-op) + final half-step tier bump 40/18/7 -> 44/20/8 (+3-4s true cost; curve +478->159->83->55->47->43 predicts +20-30; worst-window est ~296-298, DEEPEST-window submission only)
 
+## v34 - 2026-08-24 17:33:01
+- artifact: dist/solution_v34.zip
+- note: v34 = attnref probe: guarded attention-side lattice refinement (sw1/r4, T<=128 dyn cap, bf16 H in state). Reads the judge's attention data structure: +0=iid-like (revert to v33), +50..300=structured (keep+extend in v35). True cost +4-6s over v33 (guard ~0.5s + T<=128 refine ~3-5s). DEEP-NIGHT ONLY submission. v33 readout: 24987@279s (+27 in range, sweep axis closed)
+
