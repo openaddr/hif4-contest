@@ -43,11 +43,15 @@ LV_REFINE = True
 ALPHA_GRID = (0.0, 0.15, 0.3, 0.5)
 
 # --- free-form smoothing (T3c): "base" = bit-identical baseline alpha search;
-# "ff_icm" = per-channel coordinate descent on a joint act+w error model,
-# "ff_bal" = equal-error fixed point, "mag_scan" = bidirectional magnitude
-# family scan.  Non-base modes fit s on calib[:-1] and accept ONLY if the
-# joint proxy (both sides table-quantized) improves on the LAST calib sample
-# vs the baseline s; rejection keeps the baseline s (bit-identical fallback).
+# "ff_bal" (SHIP, double-holdout validated) = analytic per-channel optimum
+# s_c ~ (GwW_c / GxA_c)^(1/4) under the deployed rotated error model;
+# "ff_icm" = bal init + per-channel coordinate descent (NOT shipped: guard
+# leaks on rare-outlier data, -2.8pp/case there); "mag_scan" = parametric
+# tau-family control (weaker: +3.4 vs +5.5pp pooled).  Non-base modes fit s
+# on calib[:-1] and accept ONLY if the deploy-aware proxy (rotation-aware,
+# act side quantized) improves by 0.2% on the LAST calib sample vs the
+# baseline s; rejection keeps the baseline s (bit-identical fallback -- the
+# search uses a local generator and never touches global RNG state).
 SMOOTH_MODE = "ff_bal"
 SMOOTH_FIT_ROWS = 160       # activation rows feeding the s search
 SMOOTH_W_ROWS = 192         # weight rows feeding the s search
@@ -1059,8 +1063,8 @@ def _bal_search(xf: torch.Tensor, wsub: torch.Tensor, s0: torch.Tensor,
     minimize per block (sum_c A_c s_c^2)(sum_c B_c / s_c^2), where
     A_c = calib activation energy of channel c (structure estimate) and
     B_c = gw_col = full-weight column energy (in-sample).  The optimum is
-    s_c \propto (B_c / A_c)^(1/4).  For flat weights this reduces to
-    s propto gains^-0.5 -- the empirical oracle peak."""
+    s_c ~ (B_c / A_c)^(1/4).  For flat weights this reduces to
+    s ~ gains^-0.5 -- the empirical oracle peak."""
     ls = 0.25 * (gw_col / gx_col).clamp_min(1e-30).log()
     ls = ls - ls.mean()
     ls = ls.clamp(-SMOOTH_LOGS_CLIP, SMOOTH_LOGS_CLIP)

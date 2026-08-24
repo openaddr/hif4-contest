@@ -43,12 +43,16 @@ LV_REFINE = True
 ALPHA_GRID = (0.0, 0.15, 0.3, 0.5)
 
 # --- free-form smoothing (T3c): "base" = bit-identical baseline alpha search;
-# "ff_icm" = per-channel coordinate descent on a joint act+w error model,
-# "ff_bal" = equal-error fixed point, "mag_scan" = bidirectional magnitude
-# family scan.  Non-base modes fit s on calib[:-1] and accept ONLY if the
-# joint proxy (both sides table-quantized) improves on the LAST calib sample
-# vs the baseline s; rejection keeps the baseline s (bit-identical fallback).
-SMOOTH_MODE = "base"
+# "ff_bal" (SHIP, double-holdout validated) = analytic per-channel optimum
+# s_c ~ (GwW_c / GxA_c)^(1/4) under the deployed rotated error model;
+# "ff_icm" = bal init + per-channel coordinate descent (NOT shipped: guard
+# leaks on rare-outlier data, -2.8pp/case there); "mag_scan" = parametric
+# tau-family control (weaker: +3.4 vs +5.5pp pooled).  Non-base modes fit s
+# on calib[:-1] and accept ONLY if the deploy-aware proxy (rotation-aware,
+# act side quantized) improves by 0.2% on the LAST calib sample vs the
+# baseline s; rejection keeps the baseline s (bit-identical fallback -- the
+# search uses a local generator and never touches global RNG state).
+SMOOTH_MODE = "ff_bal"
 SMOOTH_FIT_ROWS = 160       # activation rows feeding the s search
 SMOOTH_W_ROWS = 192         # weight rows feeding the s search
 SMOOTH_HOLD_ROWS = 160      # holdout rows (last calib sample) for the guard

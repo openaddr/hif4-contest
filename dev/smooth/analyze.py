@@ -10,8 +10,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "results.jsonl")
 rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
-errs = [r for r in rows if "error" in r]
-rows = [r for r in rows if "error" not in r]
+errs = [r for r in rows if "error" in r or "mean_pp" not in r]
+rows = [r for r in rows if "mean_pp" in r]
 
 # pair base mean with arm deltas per (cfg, seed)
 runs = defaultdict(dict)
@@ -25,7 +25,7 @@ for (cfg, seed), arms in runs.items():
     if "base" not in arms:
         continue
     for arm, r in arms.items():
-        stats[cfg][arm].append(r["mean"] - arms["base"]["mean"])
+        stats[cfg][arm].append(r["mean_pp"] - arms["base"]["mean_pp"])
         accs[cfg][arm].append(1 if r["dbg"].get("accepted") else 0)
         tcals[cfg][arm].append(r["t_cal"] - arms["base"]["t_cal"])
 

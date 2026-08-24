@@ -313,3 +313,7 @@
 - artifact: dist/solution_v35.zip
 - note: v35 = attnref depth step r4->r8 (T<=128 unchanged, guard same). v34 probe paid +10 (positive: judge attention has structured subset); r8 captures ~40-60% more J-value on accepted groups. Increment +2-4s over v34 (worst window est ~297-298). DEEP-NIGHT ONLY. Readout calibrates the extension curve -> v36 (T=512 tier or linear rebalance)
 
+## v36 - 2026-08-24 20:57:36
+- artifact: dist/solution_v36.zip
+- note: v36 = v35 + free-form smoothing ff_bal (T3c SHIP): closed-form per-channel s_c~(GwW/GxA)^(1/4) with deploy-aware holdout guard, W-column compensation, local-RNG bit-safe fallback. Verified: base-mode bit-identical v35; mini real-test output-SSE -36.5pct; agent double-holdout B-side +5.46pp 0/64 negative; cost +~1s. Expected +400-750 online (conservative +2pp x 250 x 0.79). DEEP-NIGHT ONLY
+
