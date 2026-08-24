@@ -331,3 +331,7 @@
 - v37: 25179 @252s (fastest reading ever; great window). Predicted 25177 (= v36 -27 tiers -1 attn depth) -> actual 25179, +-2. The cost-score exchange model is now calibrated to meter precision (tier curve, attention depth, smooth transfer all priced correctly).
 - Artifacts: v36 = 25205 aggressive holder (292s-class, window-fragile); v37 = 25179 robust carrier (huge margin, end-game insurance). User stance: final-run-decides -> aggressive packages are zero-cost gambles; v37 demoted to closing insurance.
 - Waiting: smattn agent (Q/K joint channel balancing + smooth acceptance census + icm fix). Next submission = content increment only (v38), or v36+threading as robust max-score holder for the finale.
+## v38 - 2026-08-25 00:39:59
+- artifact: dist/solution_v38.zip
+- note: v38 = v36 config (smooth ff_bal + tiers 44/20/8 + attn r8) + QKS joint channel balancing (SHIP: mini persistence 0.997-0.999, real-test +1.83pp 5/5, iid 8/8 reject; two-layer guard, qs bf16 1KB in state). QKS cost 247ms/grp local ~= +6s online (agent's +2.1s used the dead 4.8x rate again). Ordinary ~294s DEEP-NIGHT gamble; readout vs v36 (25205) isolates QKS, expect +100-300
+

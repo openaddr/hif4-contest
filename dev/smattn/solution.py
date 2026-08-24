@@ -336,7 +336,7 @@ ATTN_REFINE_GUARD_MAXT = 512  # stride cap on hold rows for the guard scoring
 ATTN_REFINE_MAX_T = 128     # dynamic-path T cap: only tiers measured to fit
 ATTN_REFINE_FORCE_H = False  # carry H even when rf==0 (bench hook)
 ATTN_GPTQ_ENABLE = True       # bench toggle: False = {table+refine} decomposition
-_REF_ATTN_ROUNDS = 8         # flip passes per sweep (aggressive config; r8 = +1 over r4)
+_REF_ATTN_ROUNDS = 4         # flip passes per sweep (v35 online: r8 adds only +1 over r4 -- depth saturated)
 
 
 def _upper_cholesky_inv(H: torch.Tensor):
@@ -700,7 +700,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # per sweep is T-uniform but cost scales with R: spend depth on small T.
     # v26 online: tiered 10/6/5 paid +478 (small-T judge transfer ~1.0x
     # synthetic, not 0.28x -- slices differ). Curves unflattened by 12.
-    n_sweeps = 44 if T <= 256 else 20 if T <= 512 else 8
+    n_sweeps = 40 if T <= 256 else 18 if T <= 512 else 7
     neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
     d2col = (d * d) * col2    # (T,C) loop-invariant
     if T <= 32:
