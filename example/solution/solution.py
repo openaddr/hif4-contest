@@ -633,7 +633,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # per sweep is T-uniform but cost scales with R: spend depth on small T.
     # v26 online: tiered 10/6/5 paid +478 (small-T judge transfer ~1.0x
     # synthetic, not 0.28x -- slices differ). Curves unflattened by 12.
-    n_sweeps = 40 if T <= 256 else 18 if T <= 512 else 7
+    n_sweeps = 44 if T <= 256 else 20 if T <= 512 else 8
     neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
     d2col = (d * d) * col2    # (T,C) loop-invariant
     if T <= 32:

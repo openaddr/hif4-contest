@@ -295,3 +295,7 @@
 - artifact: dist/solution_v32.zip
 - note: v32 = roundopt surgery (active-set compaction + pass-reduced round + numpy tail; refine calls 1.06-2.0x faster, 160/160 flip-trace bit-identity, est 15-25s online saved) + tier bump 32/14/6 -> 40/18/7 spending ~11s of the savings. True cost est ~270-280 good-window. DEEP-NIGHT submission. Expected +70-120 over 24917
 
+## v33 - 2026-08-24 11:58:10
+- artifact: dist/solution_v33.zip
+- note: v33 = v32 + cleanup carrier (B/C/D/A audit3-4 surgery, online no-op) + final half-step tier bump 40/18/7 -> 44/20/8 (+3-4s true cost; curve +478->159->83->55->47->43 predicts +20-30; worst-window est ~296-298, DEEPEST-window submission only)
+
