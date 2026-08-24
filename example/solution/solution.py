@@ -1163,10 +1163,16 @@ def hif4_calibration_attention(
                 kd = (kd.view(Tt, kvh, dh) @ R).reshape(Tt, -1)
             qv = qd.view(Tt, qh, dh)
             kv_ = kd.view(Tt, kvh, dh)
+            # per-head Grams batched into one bmm each (kernel count ~40x lower);
+            # the += accumulation loop keeps the original element order exactly
+            kb = kv_.permute(1, 0, 2)
+            qb = qv.permute(1, 0, 2)
+            G_k = torch.bmm(kb.transpose(1, 2), kb)
+            G_q = torch.bmm(qb.transpose(1, 2), qb)
             for hv in range(kvh):
-                Hk[hv] += kv_[:, hv].T @ kv_[:, hv]
+                Hk[hv] += G_k[hv]
                 for h in range(hv * rep, (hv + 1) * rep):
-                    Hq[hv] += qv[:, h].T @ qv[:, h]
+                    Hq[hv] += G_q[h]
         Uq = _upper_cholesky_inv(Hk)      # applied to Q
         Uk = _upper_cholesky_inv(Hq)      # applied to K
 
