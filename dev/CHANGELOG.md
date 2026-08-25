@@ -335,3 +335,7 @@
 - artifact: dist/solution_v38.zip
 - note: v38 = v36 config (smooth ff_bal + tiers 44/20/8 + attn r8) + QKS joint channel balancing (SHIP: mini persistence 0.997-0.999, real-test +1.83pp 5/5, iid 8/8 reject; two-layer guard, qs bf16 1KB in state). QKS cost 247ms/grp local ~= +6s online (agent's +2.1s used the dead 4.8x rate again). Ordinary ~294s DEEP-NIGHT gamble; readout vs v36 (25205) isolates QKS, expect +100-300
 
+## v38 readout - 2026-08-25
+- v38: 25266 @283s = NEW BEST (+61 over v36, pure QKS increment; good window 283 for a ~294-ordinary package). Channel-statistics class scoreboard: smooth +207, QKS +61, 2/2 members paying.
+- KEY PRICING INTEL: realization ratio vs mini promise now measured twice -- smooth 21%, QKS 13%. All future channel-class estimates priced at 0.13-0.21x mini promise. Standings: 25266 vs #2 (gap 1148) / #1 (gap 1458).
+- Queue: msel agent running (multi-s per-call selection); v39 candidate = guard margin relaxation for smooth+QKS (census: iid reversal margin is 5-30%, far above the 0.2% threshold -- relaxing to ~1-2% stays iid-safe, unlocks borderline structured groups; est +20-80); v40 candidate = R>1024 population probe (local value +11.7pp/affected call, judge population unknown).
