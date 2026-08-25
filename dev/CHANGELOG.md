@@ -350,3 +350,7 @@
 - artifact: dist/solution_v40.zip
 - note: v40 = R>1024 population probe (last queued lottery): dynamic calls with R beyond tmax and C<=2048 get PREFIX-1024 refinement at 1 sweep (rows independent, first sweep = bulk of value; cost ~0.6s online/call, flat in R). Bit-identical no-op if judge has no such population (mini 5/5 + all R<=tmax paths verified torch.equal vs v39). Local value evidence: r1024v measured prefix@8 +2.8-5.9pp/affected call, 1-sweep captures the leading share. Readout vs v39 (25266): +0 = population absent, axis closed; >+20 = population exists, worth a real tier in v41
 
+## v40 readout - 2026-08-25
+- v40: 25266 @287s (+0 exact) -- judge has NO R>1024 dynamic-call population (C<=2048); population axis permanently closed. Zero cost confirmed (score bit-identical + time same-family).
+- Board state: all queued lotteries resolved (threshold +0, population +0). Standing 25266 (gap to #2: 1148). Channel-statistics class: smooth +207, QKS +61, msel dead, threshold dead, R1024 dead.
+- Remaining: decomp3 (fresh error anatomy of the post-smooth/QKS pipeline -> ranked residual pools), thread cleanup (+4-12 equiv), endgame carrier, intel.
