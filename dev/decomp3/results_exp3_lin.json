@@ -1,0 +1,77 @@
+[
+ {
+  "arm": "ship",
+  "mean": 90.348,
+  "scores": [
+   90.995,
+   85.166,
+   90.333,
+   92.741,
+   92.505
+  ],
+  "mode": 1,
+  "g": 1,
+  "rms_log_ratio_vs_ship": null,
+  "s_logstd": 0.2733
+ },
+ {
+  "arm": "orac_en",
+  "mean": 90.299,
+  "scores": [
+   91.008,
+   84.753,
+   90.4,
+   92.759,
+   92.577
+  ],
+  "mode": 1,
+  "g": 1,
+  "rms_log_ratio_vs_ship": 0.0509,
+  "s_logstd": 0.2768
+ },
+ {
+  "arm": "allcal",
+  "mean": 77.772,
+  "scores": [
+   33.495,
+   80.996,
+   90.357,
+   92.273,
+   91.738
+  ],
+  "mode": 1,
+  "g": 1,
+  "rms_log_ratio_vs_ship": 0.2485,
+  "s_logstd": 0.2759
+ },
+ {
+  "arm": "orac_icm",
+  "mean": 90.589,
+  "scores": [
+   91.047,
+   85.462,
+   90.783,
+   92.901,
+   92.753
+  ],
+  "mode": 1,
+  "g": 1,
+  "rms_log_ratio_vs_ship": 0.0655,
+  "s_logstd": 0.277
+ },
+ {
+  "arm": "s1_base",
+  "mean": 86.494,
+  "scores": [
+   86.003,
+   84.632,
+   87.6,
+   86.678,
+   87.556
+  ],
+  "mode": 1,
+  "g": 1,
+  "rms_log_ratio_vs_ship": 0.2735,
+  "s_logstd": 0.0
+ }
+]

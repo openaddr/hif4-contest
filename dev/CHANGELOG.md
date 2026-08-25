@@ -354,3 +354,7 @@
 - v40: 25266 @287s (+0 exact) -- judge has NO R>1024 dynamic-call population (C<=2048); population axis permanently closed. Zero cost confirmed (score bit-identical + time same-family).
 - Board state: all queued lotteries resolved (threshold +0, population +0). Standing 25266 (gap to #2: 1148). Channel-statistics class: smooth +207, QKS +61, msel dead, threshold dead, R1024 dead.
 - Remaining: decomp3 (fresh error anatomy of the post-smooth/QKS pipeline -> ranked residual pools), thread cleanup (+4-12 equiv), endgame carrier, intel.
+## v41 - 2026-08-25 15:01:20
+- artifact: dist/solution_v41.zip
+- note: v41 = fp32 Gram carry for C<=2048 (decomp3 pool #4): bf16's 1.66e-3 relative error distorts the refinement objective on real data (true MSE bottoms then RISES under deep sweeps); fp32 grams make it monotone -> +0.97pp/case mini at ZERO time cost (both grams must be fp32 -- super-additive; gw-only +0.21). Envelope: C2048 fp32 state = 48.0MiB exactly at the proven-safe 48 point; C4096 keeps bf16 (fp32 there = dead 192MiB zone). Caveat: synth recheck = 0 (rows freeze on synth, not on real data) -- judge realization unknown, est +30..115
+

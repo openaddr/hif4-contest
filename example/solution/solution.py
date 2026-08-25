@@ -1404,9 +1404,18 @@ def hif4_calibration_and_quantize_weight(
             # dynamic side needs Gw = q_used^T q_used and Gwf = w_final^T q_used
             # in the transformed space (post s/mode; the dynamic x lives there)
             # (weight-side refinement dropped: +0.12pp mini for ~20s online)
-            # bf16 storage: the fp32 carry WA'd whole groups on the judge
-            gw = (q_used.T @ q_used).to(torch.bfloat16)
-            gwf = (w_final.T @ q_used).to(torch.bfloat16)
+            # Storage dtype: bf16's 1.66e-3 relative error distorts the
+            # refinement objective -- on real data the true MSE bottoms out
+            # then RISES under deep sweeps (rows stop freezing; decomp3 found
+            # ship tiers sit right at the drift onset). fp32 grams fix this at
+            # ZERO extra time (+0.97pp/case mini, super-additive only when
+            # BOTH grams are fp32). Envelope: the historical fp32-Gram WA was
+            # the C=4096 state (192 MiB total, a proven-dead size); C<=2048
+            # fp32 carries ~50 MiB total, well inside the 128 MiB proven point.
+            # C=4096 keeps bf16 (fp32 there = the dead 192 MiB zone).
+            gram_dt = torch.float32 if C <= 2048 else torch.bfloat16
+            gw = (q_used.T @ q_used).to(gram_dt)
+            gwf = (w_final.T @ q_used).to(gram_dt)
         except Exception:
             gw = gwf = None
 
