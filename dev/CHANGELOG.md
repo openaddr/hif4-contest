@@ -361,3 +361,7 @@
 ## v41 readouts - 2026-08-25
 - v41 first attempt: TIMEOUT (window luck -- package is v40-family ~294s ordinary). Retry: 25268 @261s = NEW BEST (+2 over v40). fp32 Gram realized only +2 (~2% of mini's +0.97pp/case promise): decomp3's caveat materialized -- judge C<=2048 groups freeze early like synth, unlike mini (real-data-specific pool, mini was the only real evidence). Axis closed at +2. Gap to #2: 1146.
 - Remaining live mechanism: attention refine T-gate extension (decomp3 pool #6, +0.63pp/case mini ceiling ~= +158 online cap; attention realization ratios observed 2-13% -> est +10-40). Timing before tiering.
+## v42 - 2026-08-25 22:09:03
+- artifact: dist/solution_v42.zip
+- note: v42 = attention T-gate extension (decomp3 pool #6, last live mechanism): refine T<=1024 calls, tiered rounds -- T<=128 keeps r8 (banked depth bit-identical), T>128 at r2 (~40ms online/call) + rot-guard chains thread-overlapped (bit-identical, -148ms/grp local). Net +6s online. Mini promise +0.63pp/case x 250 cases ~= +158 cap; attention realization 2-13pct -> est +10-40. DEEP-NIGHT window
+

@@ -341,7 +341,11 @@ QKS_STABILITY = True        # False = skip the stability filter (diagnostics)
 QKS_DEBUG: dict = {}        # last fit/guard outcome (experiment instrumentation)
 ATTN_REFINE_GUARD = True    # hold-out gate in calibration (False = force on)
 ATTN_REFINE_GUARD_MAXT = 512  # stride cap on hold rows for the guard scoring
-ATTN_REFINE_MAX_T = 128     # dynamic-path T cap: only tiers measured to fit
+ATTN_REFINE_MAX_T = 1024    # dynamic-path T cap (v42: extended from 128 --
+                            # decomp3 pool #6; T>128 calls refine at shallow
+                            # rounds, T<=128 keeps the v34-depth r8)
+ATTN_REFINE_ROUNDS_SMALL = 8   # flip passes for T<=128 calls (v34/v35 depth)
+ATTN_REFINE_ROUNDS_BIG = 2     # flip passes for T>128 calls (~40ms online/call)
 ATTN_REFINE_FORCE_H = False  # carry H even when rf==0 (bench hook)
 ATTN_GPTQ_ENABLE = True       # bench toggle: False = {table+refine} decomposition
 _REF_ATTN_ROUNDS = 8         # flip passes per sweep (aggressive config; r8 = +1 over r4)
@@ -729,8 +733,8 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
 
 
 def _refine_attn_heads(x: torch.Tensor, values: torch.Tensor,
-                        unit: torch.Tensor, H: torch.Tensor, num_heads: int,
-                        n_sweeps: int) -> torch.Tensor:
+                       unit: torch.Tensor, H: torch.Tensor, num_heads: int,
+                       n_sweeps: int, rounds: int | None = None) -> torch.Tensor:
     """Greedy top-1 lattice refinement of attention Q/K values, batched over
     heads against the calibration logit-space Hessian.
 
@@ -778,7 +782,7 @@ def _refine_attn_heads(x: torch.Tensor, values: torch.Tensor,
     g = torch.empty(A, dh, dtype=torch.float32)
     up = torch.empty(A, dh, dtype=torch.bool)
     ill = torch.empty(A, dh, dtype=torch.bool)
-    total = n_sweeps * _REF_ATTN_ROUNDS
+    total = n_sweeps * (rounds if rounds is not None else _REF_ATTN_ROUNDS)
     rnd = 0
     while rnd < total and A > 0:
         torch.abs(Ma, out=g)
@@ -1732,13 +1736,25 @@ def hif4_calibration_attention(
         out = _attention_out(_deq_params(pq), _deq_params(pk), _deq_params(pv_hold), qh, kvh, dh)
         return ((out - ref) ** 2).mean().item()
 
-    loss_off = run(q, k)
-    rot = 0
+    # the two guard chains are independent dispatch-bound single-core
+    # evaluations (intra-op ~1.0x at these sizes) -- overlap them on threads;
+    # each chain's arithmetic is unchanged (bit-identical losses)
     if R is not None:
         qr = (q.view(T, qh, dh) @ R).reshape(T, qh * dh)
         kr = (k.view(T, kvh, dh) @ R).reshape(T, kvh * dh)
-        loss_on = run(qr, kr)
+        _lo = [None, None]
+
+        def _run_i(i, a, b):
+            _lo[i] = run(a, b)
+
+        _t0 = _Thread(target=_run_i, args=(0, q, k))
+        _t1 = _Thread(target=_run_i, args=(1, qr, kr))
+        _t0.start(); _t1.start(); _t0.join(); _t1.join()
+        loss_off, loss_on = _lo
         rot = 1 if loss_on < loss_off else 0
+    else:
+        loss_off = run(q, k)
+        rot = 0
 
     # ---- Q/K logit-space GPTQ: Hessians from calib[:-1] (rotated space) ----
     u_q = None
@@ -1974,8 +1990,10 @@ def _dyn_qk(quant, scale, state, num_heads, head_dim, role=None):
                 and x.shape[1] == num_heads * head_dim):
             try:
                 base = values if values is not None else _deq_params(p)
+                _rnd = (ATTN_REFINE_ROUNDS_SMALL if x.shape[0] <= 128
+                        else ATTN_REFINE_ROUNDS_BIG)
                 v1 = _refine_attn_heads(x, base, unit, H, num_heads,
-                                        int(state["rf"]))
+                                        int(state["rf"]), rounds=_rnd)
                 p = _values_to_params(v1.contiguous(), p)
             except Exception:
                 pass
