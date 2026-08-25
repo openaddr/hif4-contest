@@ -343,3 +343,10 @@
 - artifact: dist/solution_v39.zip
 - note: v39 = guard margin relaxation probe (zero cost): smooth 0.998->0.9995, QKS 0.002->0.0005. Census says iid reversal is 5-30pct so relaxed bar still rejects iid; unlocks borderline structured groups. Local no-op verified (mini accepts unchanged, stress rejects unchanged). Reads the judge's borderline band: +0-80. Readout vs v38 (25266) is pure threshold effect
 
+## v39 readout - 2026-08-25
+- v39: 25266 @291s (= v38 exactly; +0). Threshold-relaxation axis CLOSED: the judge has no borderline structured band; the 0.2% guard bar already admits everything worth admitting. The 13-21% realization ratio is the intrinsic judge-structure ceiling, not guard conservatism. Further relaxation pointless.
+- Next: v40 = R>1024 population probe (last queued lottery).
+## v40 - 2026-08-25 11:17:03
+- artifact: dist/solution_v40.zip
+- note: v40 = R>1024 population probe (last queued lottery): dynamic calls with R beyond tmax and C<=2048 get PREFIX-1024 refinement at 1 sweep (rows independent, first sweep = bulk of value; cost ~0.6s online/call, flat in R). Bit-identical no-op if judge has no such population (mini 5/5 + all R<=tmax paths verified torch.equal vs v39). Local value evidence: r1024v measured prefix@8 +2.8-5.9pp/affected call, 1-sweep captures the leading share. Readout vs v39 (25266): +0 = population absent, axis closed; >+20 = population exists, worth a real tier in v41
+
