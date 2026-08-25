@@ -326,10 +326,7 @@ QKS_GAMMA = 1.0             # damping on log s (1.0 = closed form; <1 shrinks)
 QKS_LOGS_CLIP = 3.0         # |log s| bound
 QKS_FIT_ROWS = 512          # per-calib-sample row cap for the energy fit
 QKS_GUARD_ROWS = 256        # hold rows for the deploy-aware guard
-QKS_GUARD_MARGIN = 0.0005  # accept if j_cand < (1-margin)*j_base; relaxed from
-                           # 0.002 (v39 probe): iid census reversal is 5-30%,
-                           # so a 0.05% bar still rejects iid robustly while
-                           # unlocking borderline structured groups
+QKS_GUARD_MARGIN = 0.002    # accept only if j_cand < (1-margin)*j_base
 QKS_STAB_MIN = 0.5          # min median cross-sample log-ratio corr to accept
 QKS_GUARD = True            # False = accept any finite fit (diagnostics)
 QKS_STABILITY = True        # False = skip the stability filter (diagnostics)
@@ -1193,9 +1190,7 @@ def _freeform_s(acts_raw: list, w: torch.Tensor, s_base: torch.Tensor,
             {"fitted": False, "accepted": False})
         return None
     j_base, j_cand = _proxy_pair_threaded(s_base, s_cand, xh, wsub)
-    ok = (j_cand < 0.9995 * j_base and j_cand > 0.0) or not SMOOTH_GUARD
-    # 0.9995 (v39 probe): bar relaxed from 0.2% to 0.05% improvement -- iid
-    # census reversal is 5-30%, so borderline accepts remain structure-only
+    ok = (j_cand < 0.998 * j_base and j_cand > 0.0) or not SMOOTH_GUARD
     SMOOTH_DEBUG.clear(); SMOOTH_DEBUG.update(
         {"fitted": True, "accepted": bool(ok),
          "j_base": j_base, "j_cand": j_cand})
