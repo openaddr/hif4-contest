@@ -358,3 +358,6 @@
 - artifact: dist/solution_v41.zip
 - note: v41 = fp32 Gram carry for C<=2048 (decomp3 pool #4): bf16's 1.66e-3 relative error distorts the refinement objective on real data (true MSE bottoms then RISES under deep sweeps); fp32 grams make it monotone -> +0.97pp/case mini at ZERO time cost (both grams must be fp32 -- super-additive; gw-only +0.21). Envelope: C2048 fp32 state = 48.0MiB exactly at the proven-safe 48 point; C4096 keeps bf16 (fp32 there = dead 192MiB zone). Caveat: synth recheck = 0 (rows freeze on synth, not on real data) -- judge realization unknown, est +30..115
 
+## v41 readouts - 2026-08-25
+- v41 first attempt: TIMEOUT (window luck -- package is v40-family ~294s ordinary). Retry: 25268 @261s = NEW BEST (+2 over v40). fp32 Gram realized only +2 (~2% of mini's +0.97pp/case promise): decomp3's caveat materialized -- judge C<=2048 groups freeze early like synth, unlike mini (real-data-specific pool, mini was the only real evidence). Axis closed at +2. Gap to #2: 1146.
+- Remaining live mechanism: attention refine T-gate extension (decomp3 pool #6, +0.63pp/case mini ceiling ~= +158 online cap; attention realization ratios observed 2-13% -> est +10-40). Timing before tiering.
