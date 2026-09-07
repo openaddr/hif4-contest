@@ -273,8 +273,10 @@ GPTQ_DAMP = 0.1
 # independent); flip-all variants diverge and must not be used.
 REFINE_W_SWEEPS = 1         # weight sweeps (hold-out curve flat after sweep 1)
 REFINE_ROUNDS = 20          # greedy top-1 flips per row per sweep
-REFINE_T_MAX = 2048         # activation rows refined (v43: 420s limit unlock
-                            # -- was 1024 under the 300s budget)
+REFINE_T_MAX = 1024         # activation rows; skip act refinement above this.
+                            # v16 ran this config at 286s/280s in the current
+                            # night regime (v18 measured the R=1024 refinement
+                            # pot at ~+400-800 online; keep it in)
 REFINE_BIG_PREFIX = 1024    # v40 probe: rows refined in big-R calls (R > tmax)
 REFINE_BIG_SWEEPS = 1       # v40 probe: sweep depth for the prefix (bulk of
                             # value -- rows freeze within 1-3 sweeps)
@@ -712,7 +714,7 @@ def _refine_act_values(x: torch.Tensor, values: torch.Tensor,
     # v26 online: tiered 10/6/5 paid +478 (small-T judge transfer ~1.0x
     # synthetic, not 0.28x -- slices differ). Curves unflattened by 12.
     n_sweeps = (sweep_override if sweep_override is not None else
-                (56 if T <= 256 else 28 if T <= 512 else 14))
+                (44 if T <= 256 else 20 if T <= 512 else 8))
     neg2d = -2.0 * d          # (T,C) loop-invariant (v25 recomputed/round)
     d2col = (d * d) * col2    # (T,C) loop-invariant
     if T <= 32:

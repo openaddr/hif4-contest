@@ -1,0 +1,8 @@
+== c2048_shared seed=5154 cal=3.4s mode=1 g=1 gw=torch.float32
+[c2048_shared case 0 T=128] ship=90.31 ship+p1=90.31(+0.0053) deep=90.31 deep+pair=90.76(+0.4441) coop@ship=126/128 A_neg@ship=0/128
+[c2048_shared case 1 T=512] ship=89.77 ship+p1=89.78(+0.0181) deep=90.32 deep+pair=90.83(+0.5100) coop@ship=512/512 A_neg@ship=494/512
+== c1024_shared seed=5147 cal=1.3s mode=1 g=1 gw=torch.float32
+[c1024_shared case 0 T=128] ship=82.24 ship+p1=82.25(+0.0176) deep=82.24 deep+pair=82.74(+0.5063) coop@ship=126/128 A_neg@ship=0/128
+[c1024_shared case 1 T=512] ship=81.79 ship+p1=81.80(+0.0172) deep=81.79 deep+pair=82.46(+0.6751) coop@ship=496/512 A_neg@ship=0/512
+== c2048_shared_outl seed=5701 cal=2.8s mode=1 g=1 gw=torch.float32
+[c2048_shared_outl case 0 T=128] ship=83.39 ship+p1=83.41(+0.0180) deep=89.56 deep+pair=89.89(+0.3318) coop@ship=127/128 A_neg@ship=107/128

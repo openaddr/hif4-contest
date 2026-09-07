@@ -365,3 +365,7 @@
 - artifact: dist/solution_v42.zip
 - note: v42 = attention T-gate extension (decomp3 pool #6, last live mechanism): refine T<=1024 calls, tiered rounds -- T<=128 keeps r8 (banked depth bit-identical), T>128 at r2 (~40ms online/call) + rot-guard chains thread-overlapped (bit-identical, -148ms/grp local). Net +6s online. Mini promise +0.63pp/case x 250 cases ~= +158 cap; attention realization 2-13pct -> est +10-40. DEEP-NIGHT window
 
+## v43 - 2026-09-07 13:25:11
+- artifact: dist/solution_v43.zip
+- note: v43 = 420s-limit unlock (pending official confirmation): sweep tiers 44/20/8 -> 56/28/14 (curve was unflattened at cap), REFINE_T_MAX 1024 -> 2048 (T=2048 calls get full-lattice refinement, previously prefix-only via v40 probe). Local: mini cal 5.4->11.3s dyn 5.9->9.2s (+9.2s local ~ +18s online on mini-like mix); c2048_bigT cal 6.8->11.6s dyn +5.7s (T=2048 call). Est true cost +25-45s online -> ~300-320s under 420s limit = huge margin; est +140-360 (rollback of all 300s-era budget cuts). SUBMIT ONLY AFTER 420s CONFIRMED
+
