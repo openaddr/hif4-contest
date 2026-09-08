@@ -168,5 +168,39 @@
   "pair_unlocked_singles_dJ": -832.0,
   "pp_deep_pair": 89.89,
   "pred_dpp_pair": 0.3318
+ },
+ {
+  "group": "c2048_shared_outl",
+  "seed": 5701,
+  "case": 1,
+  "T": 512,
+  "C": 2048,
+  "N": 2048,
+  "mse_std": 3.218047618865967,
+  "pp_ship": 69.37,
+  "scan_at_ship": {
+   "rows_A_neg": 511,
+   "cand_rows": 512,
+   "coop_rows": 512,
+   "Bneg_pairs": 877000353,
+   "applied_rows": 512,
+   "sum_dJ": -1830.6552734375,
+   "coop_dJ_p50": -2.8154947757720947,
+   "coop_dJ_min": -25.63397216796875,
+   "scan_s": 36.56
+  },
+  "amin_p50": -1.3541377782821655,
+  "pp_ship_pair1": 69.425,
+  "pred_dpp_ship_pair1": 0.0543,
+  "deep_sweeps": 256,
+  "deep_s": 16.96,
+  "deep_converged": false,
+  "pp_deep": 88.588,
+  "pair_sweeps": 30,
+  "pair_s": 1080.0,
+  "pair_total_dJ": -239.57747503835708,
+  "pair_unlocked_singles_dJ": -7424.0,
+  "pp_deep_pair": 88.809,
+  "pred_dpp_pair": 0.2271
  }
 ]

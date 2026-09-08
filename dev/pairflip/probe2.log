@@ -6,3 +6,5 @@
 [c1024_shared case 1 T=512] ship=81.79 ship+p1=81.80(+0.0172) deep=81.79 deep+pair=82.46(+0.6751) coop@ship=496/512 A_neg@ship=0/512
 == c2048_shared_outl seed=5701 cal=2.8s mode=1 g=1 gw=torch.float32
 [c2048_shared_outl case 0 T=128] ship=83.39 ship+p1=83.41(+0.0180) deep=89.56 deep+pair=89.89(+0.3318) coop@ship=127/128 A_neg@ship=107/128
+[c2048_shared_outl case 1 T=512] ship=69.37 ship+p1=69.42(+0.0543) deep=88.59 deep+pair=88.81(+0.2271) coop@ship=512/512 A_neg@ship=511/512
+DONE
