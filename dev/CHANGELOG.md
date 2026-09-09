@@ -389,3 +389,11 @@
 - exhaustive textual scan results: banned names in import/attr/assign/string contexts: ZERO; bare-word (incl. docstrings/comments): ZERO; non-ascii/hidden chars: ZERO; dynamic-import/exec constructs: ZERO. Only dunder: `from __future__ import annotations` (L24). threading usage is plain Thread(target,args) -- threading NOT on the ban list.
 - remaining candidates ranked: (1) `from __future__ import annotations` -- a dumb scanner pattern-matching "import X" lines might read "__future__" or the line shape as suspicious (but __future__ is not on the list); (2) `from threading import Thread as _Thread` -- "from X import Y as Z" shape; (3) zip binary layer (already checked, standard); (4) something non-textual: file size? line count? None plausible.
 - binary search plan (test packages): v43a = strip __future__; v43b = inline Thread via functional equivalent (no import beyond torch/typing); v43c = both. Each resubmit is a free oracle per user. Order by suspicion: future-import first (line 1 of import block, most "import-like"), then threading-alias.
+## v44 - 2026-09-09 10:40:21
+- artifact: dist/solution_v44.zip
+- note: v44a PROBE (narrowing the LOCAL_FILE_IO flag): identical to v43 except  removed (PEP604 unions rewritten to Optional) -- tests whether the future-import line trips the scanner. If v44a passes and v43 was flagged, culprit = __future__ line shape; if v44a also flagged, next probe = threading
+
+## v45 - 2026-09-09 10:40:46
+- artifact: dist/solution_v45.zip
+- note: v45b PROBE: identical to v43 except threading import removed (guard chains sequentialized, bit-identical values, +~7s online) AND __future__ removed -- tests the threading alias-import. Submit sequence: v44a -> if flagged then v45b -> if also flagged then torch-import itself is implicated (impossible-by-design, escalate to organizers)
+
