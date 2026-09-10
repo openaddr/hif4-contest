@@ -397,3 +397,7 @@
 - artifact: dist/solution_v45.zip
 - note: v45b PROBE: identical to v43 except threading import removed (guard chains sequentialized, bit-identical values, +~7s online) AND __future__ removed -- tests the threading alias-import. Submit sequence: v44a -> if flagged then v45b -> if also flagged then torch-import itself is implicated (impossible-by-design, escalate to organizers)
 
+## binary search round 2 - 2026-08-31
+- v45 (no-threading, WITH __future__ still) flagged identically; v44 (no-__future__, WITH threading) also flagged per sequence => neither alone is the trigger. Eliminated: __future__, threading, all banned-name textual contexts (3-layer deep scan), zip layout.
+- Remaining common factors: import numpy / import torch / non-textual file properties.
+- NEXT PROBE built: dist/probe_min.zip = 40-line minimal file (numpy+torch imports + trivial working APIs). If IT gets flagged => scanner objects to numpy/torch imports per se (contradicts other contestants having scores -- would mean account/pipe-level issue, escalate). If it PASSES => something about our file's size/shape/content beyond imports (then we bisect OUR file by halves).
